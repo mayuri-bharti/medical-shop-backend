@@ -1,0 +1,205 @@
+const express = require('express')
+const { body, validationResult } = require('express-validator')
+const { adminAuth } = require('../../middleware/auth')
+const Product = require('../../../models/Product')
+
+const router = express.Router()
+
+/**
+ * GET /admin/products
+ * Get all products with pagination
+ * Status codes: 200 (success), 403 (not admin), 500 (error)
+ */
+router.get('/', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+
+    const filter = {}
+    
+    // Search filter
+    if (req.query.search) {
+      filter.$text = { $search: req.query.search }
+    }
+    
+    // Category filter
+    if (req.query.category) {
+      filter.category = req.query.category
+    }
+
+    const products = await Product.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+
+    const total = await Product.countDocuments(filter)
+
+    res.json({
+      success: true,
+      data: {
+        products,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Get admin products error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch products'
+    })
+  }
+})
+
+/**
+ * POST /admin/products
+ * Create new product
+ * Status codes: 201 (success), 400 (validation error), 403 (not admin), 500 (error)
+ */
+router.post('/', adminAuth, [
+  body('name').trim().notEmpty().withMessage('Product name is required'),
+  body('brand').trim().notEmpty().withMessage('Brand is required'),
+  body('sku').trim().notEmpty().withMessage('SKU is required').isUppercase().withMessage('SKU must be uppercase'),
+  body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+  body('mrp').isFloat({ min: 0 }).withMessage('MRP must be a positive number'),
+  body('stock').isInt({ min: 0 }).withMessage('Stock must be a non-negative integer'),
+  body('description').trim().notEmpty().withMessage('Description is required'),
+  body('images').isArray().withMessage('Images must be an array'),
+  body('images.*').isURL().withMessage('Each image must be a valid URL'),
+  body('category').optional().isIn([
+    'Prescription Medicines',
+    'OTC Medicines',
+    'Wellness Products',
+    'Personal Care',
+    'Health Supplements',
+    'Baby Care',
+    'Medical Devices',
+    'Ayurvedic Products'
+  ]).withMessage('Invalid category')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const product = new Product(req.body)
+    await product.save()
+
+    res.status(201).json({
+      success: true,
+      message: 'Product created successfully',
+      data: product
+    })
+  } catch (error) {
+    console.error('Create product error:', error)
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product with this SKU already exists'
+      })
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create product'
+    })
+  }
+})
+
+/**
+ * PUT /admin/products/:id
+ * Update product
+ * Status codes: 200 (success), 400 (validation error), 403 (not admin), 404 (not found), 500 (error)
+ */
+router.put('/:id', adminAuth, [
+  body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty'),
+  body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+  body('mrp').optional().isFloat({ min: 0 }).withMessage('MRP must be a positive number'),
+  body('stock').optional().isInt({ min: 0 }).withMessage('Stock must be a non-negative integer'),
+  body('images').optional().isArray().withMessage('Images must be an array'),
+  body('images.*').optional().isURL().withMessage('Each image must be a valid URL')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    )
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      })
+    }
+
+    res.json({
+      success: true,
+      message: 'Product updated successfully',
+      data: product
+    })
+  } catch (error) {
+    console.error('Update product error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update product'
+    })
+  }
+})
+
+/**
+ * DELETE /admin/products/:id
+ * Delete (soft delete) product
+ * Status codes: 200 (success), 403 (not admin), 404 (not found), 500 (error)
+ */
+router.delete('/:id', adminAuth, async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    )
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      })
+    }
+
+    res.json({
+      success: true,
+      message: 'Product deleted successfully',
+      data: product
+    })
+  } catch (error) {
+    console.error('Delete product error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete product'
+    })
+  }
+})
+
+module.exports = router
+

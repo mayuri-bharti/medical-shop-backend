@@ -1,0 +1,66 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Test files
+tests
+*.test.js
+__tests__
+coverage
+
+# Documentation
+*.md
+README.md
+docs
+
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist
+build
+
+# Logs
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Misc
+.prettierrc
+.eslintrc*
+jest.config.js
+.editorconfig
+
+
+
+
+
+
+
+
+
+
+
