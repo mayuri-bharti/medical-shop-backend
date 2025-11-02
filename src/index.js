@@ -11,6 +11,7 @@ const authRoutes = require('./routes/auth')
 const prescriptionRoutes = require('./routes/prescriptions')
 const cartRoutes = require('./routes/cart')
 const orderRoutes = require('./routes/orders')
+const productRoutes = require('../routes/products')
 const adminProductRoutes = require('./routes/admin/products')
 
 // Initialize Express app
@@ -80,6 +81,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
+app.use('/api/products', productRoutes)
 app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
