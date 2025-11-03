@@ -11,7 +11,6 @@ const authRoutes = require('./routes/auth')
 const prescriptionRoutes = require('./routes/prescriptions')
 const cartRoutes = require('./routes/cart')
 const orderRoutes = require('./routes/orders')
-const productRoutes = require('../routes/products')
 const adminProductRoutes = require('./routes/admin/products')
 
 // Initialize Express app
@@ -21,25 +20,31 @@ const app = express()
 app.use(helmet())
 
 // CORS configuration with origin allowlist
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:3000', 'http://localhost:5173']
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://medical-shop-frontend-beryl.vercel.app/"
+];
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true)
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-      callback(null, true)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'))
+      console.warn("Blocked by CORS:", origin);
+      // Don’t crash function — just deny gracefully
+      return callback(null, false);
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}))
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+
 
 // Rate limiting
 const limiter = rateLimit({
@@ -81,7 +86,6 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
-app.use('/api/products', productRoutes)
 app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
