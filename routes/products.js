@@ -1,7 +1,7 @@
-const express = require('express')
-const { body, validationResult, query } = require('express-validator')
-const Product = require('../models/Product')
-const { auth, adminAuth } = require('../middleware/auth')
+import express from 'express'
+import { body, validationResult, query } from 'express-validator'
+import Product from '../models/Product.js'
+import { auth, adminAuth } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -197,7 +197,7 @@ router.get('/categories/list', async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 
 

@@ -1,9 +1,9 @@
-const express = require('express')
-const multer = require('multer')
-const path = require('path')
-const { body, validationResult } = require('express-validator')
-const Prescription = require('../models/Prescription')
-const { auth } = require('../middleware/auth')
+import express from 'express'
+import multer from 'multer'
+import path from 'path'
+import { body, validationResult } from 'express-validator'
+import Prescription from '../models/Prescription.js'
+import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -190,7 +190,7 @@ router.delete('/:id', auth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 
 

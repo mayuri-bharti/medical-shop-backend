@@ -1,7 +1,7 @@
-const express = require('express')
-const { body, validationResult } = require('express-validator')
-const { adminAuth } = require('../../middleware/auth')
-const Product = require('../../../models/Product')
+import express from 'express'
+import { body, validationResult } from 'express-validator'
+import { adminAuth } from '../../middleware/auth.js'
+import Product from '../../../models/Product.js'
 
 const router = express.Router()
 
@@ -201,5 +201,5 @@ router.delete('/:id', adminAuth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 

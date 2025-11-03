@@ -1,11 +1,11 @@
-const mongoose = require('mongoose')
+import mongoose from 'mongoose'
 
 /**
  * Connect to MongoDB
  * @param {string} mongoUrl - MongoDB connection URL
  * @returns {Promise<mongoose.Connection>}
  */
-const connectDB = async (mongoUrl) => {
+export const connectDB = async (mongoUrl) => {
   try {
     const options = {
       maxPoolSize: 10,
@@ -57,9 +57,6 @@ const disconnectDB = async () => {
   }
 }
 
-module.exports = {
-  connectDB,
-  disconnectDB
-}
+export { disconnectDB }
 
 

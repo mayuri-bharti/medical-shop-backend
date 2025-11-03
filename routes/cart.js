@@ -1,8 +1,8 @@
-const express = require('express')
-const { body, validationResult } = require('express-validator')
-const Cart = require('../models/Cart')
-const Product = require('../models/Product')
-const { auth } = require('../middleware/auth')
+import express from 'express'
+import { body, validationResult } from 'express-validator'
+import Cart from '../models/Cart.js'
+import Product from '../models/Product.js'
+import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -144,7 +144,7 @@ router.delete('/', auth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 
 

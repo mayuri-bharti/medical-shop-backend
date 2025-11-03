@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+import mongoose from 'mongoose'
 
 const otpSchema = new mongoose.Schema({
   phone: {
@@ -55,5 +55,5 @@ otpSchema.methods.markAsUsed = function() {
   return this.save()
 }
 
-module.exports = mongoose.model('Otp', otpSchema)
+export default mongoose.model('Otp', otpSchema)
 

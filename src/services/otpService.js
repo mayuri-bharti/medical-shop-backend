@@ -3,29 +3,42 @@
  * Handles OTP generation, verification, rate limiting, and token creation
  */
 
-const bcrypt = require('bcryptjs')
-const jwt = require('jsonwebtoken')
-const Otp = require('../../models/Otp')
-const User = require('../../models/User')
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import Otp from '../../models/Otp.js'
+import User from '../../models/User.js'
 
-// Redis client (optional)
+// Redis client (optional) - lazy loaded
 let redisClient = null
-if (process.env.REDIS_URL) {
-  try {
-    const redis = require('redis')
-    redisClient = redis.createClient({ url: process.env.REDIS_URL })
-    
-    redisClient.on('error', (err) => {
-      console.warn('Redis client error:', err.message)
-    })
-    
-    redisClient.connect().catch(() => {
-      redisClient = null
-      console.log('⚠️  Continuing without Redis rate limiting')
-    })
-  } catch (error) {
-    console.log('⚠️  Redis not available, using in-memory rate limiting')
+let redisClientInitialized = false
+
+/**
+ * Initialize Redis client if available
+ */
+const initRedisClient = async () => {
+  if (redisClientInitialized) return redisClient
+  
+  redisClientInitialized = true
+  
+  if (process.env.REDIS_URL) {
+    try {
+      const redis = await import('redis')
+      redisClient = redis.default.createClient({ url: process.env.REDIS_URL })
+      
+      redisClient.on('error', (err) => {
+        console.warn('Redis client error:', err.message)
+      })
+      
+      redisClient.connect().catch(() => {
+        redisClient = null
+        console.log('⚠️  Continuing without Redis rate limiting')
+      })
+    } catch (error) {
+      console.log('⚠️  Redis not available, using in-memory rate limiting')
+    }
   }
+  
+  return redisClient
 }
 
 /**
@@ -115,6 +128,7 @@ const checkRateLimit = async (phone) => {
   const currentTime = Date.now()
   
   // Try Redis first if available
+  await initRedisClient()
   if (redisClient) {
     try {
       const key = `otp_rate_limit:${phone}`
@@ -167,6 +181,7 @@ const checkRateLimit = async (phone) => {
  * @param {string} phone - Phone number
  */
 const updateRateLimit = async (phone) => {
+  await initRedisClient()
   if (redisClient) {
     try {
       const key = `otp_rate_limit:${phone}`
@@ -388,7 +403,7 @@ const refreshAccessToken = async (refreshToken) => {
   }
 }
 
-module.exports = {
+export {
   generateOtp,
   verifyOtp,
   createUserAndTokens,

@@ -1,7 +1,7 @@
-const express = require('express')
-const multer = require('multer')
-const { auth } = require('../middleware/auth')
-const Prescription = require('../../models/Prescription')
+import express from 'express'
+import multer from 'multer'
+import { auth } from '../middleware/auth.js'
+import Prescription from '../../models/Prescription.js'
 
 const router = express.Router()
 
@@ -95,7 +95,7 @@ router.get('/', auth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 
 

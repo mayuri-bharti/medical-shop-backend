@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+import mongoose from 'mongoose'
 
 const orderItemSchema = new mongoose.Schema({
   product: {
@@ -131,4 +131,4 @@ orderSchema.methods.cancelOrder = function(reason) {
   throw new Error('Cannot cancel order in current status')
 }
 
-module.exports = mongoose.model('Order', orderSchema)
+export default mongoose.model('Order', orderSchema)

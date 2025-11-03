@@ -1,5 +1,6 @@
-const mongoose = require('mongoose')
-require('dotenv').config()
+import mongoose from 'mongoose'
+import dotenv from 'dotenv'
+dotenv.config()
 
 const fixIndexes = async () => {
   try {
@@ -16,7 +17,7 @@ const fixIndexes = async () => {
     console.log('✅ Dropped users collection')
     
     // Import the model to recreate collection with new schema
-    const User = require('../models/User')
+    const { default: User } = await import('../models/User.js')
     console.log('✅ User model loaded with new schema')
     
     await mongoose.connection.close()

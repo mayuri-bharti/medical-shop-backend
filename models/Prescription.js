@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+import mongoose from 'mongoose'
 
 const prescriptionSchema = new mongoose.Schema({
   user: {
@@ -101,7 +101,7 @@ prescriptionSchema.methods.reject = function(processedBy, reason) {
   return this.save()
 }
 
-module.exports = mongoose.model('Prescription', prescriptionSchema)
+export default mongoose.model('Prescription', prescriptionSchema)
 
 
 

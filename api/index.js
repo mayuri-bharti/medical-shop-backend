@@ -1,5 +1,5 @@
-const app = require('../src/index.js')
+import app from '../src/index.js'
 
-module.exports = app
+export default app
 
 

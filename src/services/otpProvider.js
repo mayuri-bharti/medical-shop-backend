@@ -54,10 +54,11 @@ const sendViaTwilio = async (phone, message) => {
     throw new Error('Twilio credentials not configured. Check TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM environment variables.')
   }
 
-  // Dynamically require Twilio to avoid errors if not installed
+  // Dynamically import Twilio to avoid errors if not installed
   let twilio
   try {
-    twilio = require('twilio')
+    const twilioModule = await import('twilio')
+    twilio = twilioModule.default || twilioModule
   } catch (err) {
     throw new Error('Twilio package not installed. Run: npm install twilio')
   }
@@ -254,7 +255,7 @@ const retryWithBackoff = async (fn, maxRetries = 3, initialDelay = 1000) => {
   throw lastError
 }
 
-module.exports = {
+export {
   sendOtpSms,
   retryWithBackoff
 }

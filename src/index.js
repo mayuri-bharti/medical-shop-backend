@@ -1,24 +1,25 @@
-const express = require('express')
-const helmet = require('helmet')
-const cors = require('cors')
-const morgan = require('morgan')
-const mongoose = require('mongoose')
-const { auth } = require('./middleware/auth')
-const rateLimit = require('express-rate-limit')
-require('dotenv').config()
+import express from 'express'
+import helmet from 'helmet'
+import cors from 'cors'
+import morgan from 'morgan'
+import mongoose from 'mongoose'
+import { auth } from './middleware/auth.js'
+import rateLimit from 'express-rate-limit'
+import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { connectDB } from './db.js'
+import authRoutes from './routes/auth.js'
+import prescriptionRoutes from './routes/prescriptions.js'
+import cartRoutes from './routes/cart.js'
+import orderRoutes from './routes/orders.js'
+import productRoutes from '../routes/products.js'
+import adminProductRoutes from './routes/admin/products.js'
+dotenv.config()
 
 // Global error handlers to prevent Vercel crashes
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason)
 })
-
-const { connectDB } = require('./db')
-const authRoutes = require('./routes/auth')
-const prescriptionRoutes = require('./routes/prescriptions')
-const cartRoutes = require('./routes/cart')
-const orderRoutes = require('./routes/orders')
-const productRoutes = require('../routes/products')
-const adminProductRoutes = require('./routes/admin/products')
 
 // Initialize Express app
 const app = express()
@@ -152,9 +153,9 @@ if (process.env.MONGO_URL) {
 // Redis connection (optional)
 let redisClient = null
 if (process.env.REDIS_URL) {
-  const redis = require('redis')
+  const { createClient } = await import('redis')
   try {
-    redisClient = redis.createClient({ 
+    redisClient = createClient({ 
       url: process.env.REDIS_URL 
     })
     
@@ -183,10 +184,13 @@ if (process.env.REDIS_URL) {
 app.redisClient = redisClient
 
 // Export app for testing
-module.exports = app
+export default app
 
 // Start server if not in test environment
-if (require.main === module) {
+const __filename = fileURLToPath(import.meta.url)
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+
+if (isMainModule) {
   const PORT = process.env.PORT || 4000
   
   app.listen(PORT, () => {

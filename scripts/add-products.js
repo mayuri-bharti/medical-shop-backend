@@ -1,9 +1,10 @@
-const mongoose = require('mongoose')
-const { connectDB, disconnectDB } = require('../src/db')
-require('dotenv').config()
+import mongoose from 'mongoose'
+import { connectDB, disconnectDB } from '../src/db.js'
+import dotenv from 'dotenv'
+dotenv.config()
 
 // Import models
-const Product = require('../models/Product')
+import Product from '../models/Product.js'
 
 // Sample products data with image URLs
 const sampleProducts = [
@@ -249,14 +250,16 @@ const addProducts = async () => {
 }
 
 // Run function
-if (require.main === module) {
+import { fileURLToPath } from 'url'
+const __filename = fileURLToPath(import.meta.url)
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   addProducts().catch((error) => {
     console.error('Fatal error:', error)
     process.exit(1)
   })
 }
 
-module.exports = { addProducts }
+export { addProducts }
 
 
 

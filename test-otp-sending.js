@@ -6,8 +6,9 @@
  * Example: node test-otp-sending.js +919022896203
  */
 
-require('dotenv').config()
-const { sendOtpSms } = require('./src/services/otpProvider')
+import dotenv from 'dotenv'
+dotenv.config()
+import { sendOtpSms } from './src/services/otpProvider.js'
 
 async function testOtpSending() {
   // Get phone number from command line or use default

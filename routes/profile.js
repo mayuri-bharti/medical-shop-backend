@@ -1,7 +1,7 @@
-const express = require('express')
-const { body, validationResult } = require('express-validator')
-const User = require('../models/User')
-const { auth } = require('../middleware/auth')
+import express from 'express'
+import { body, validationResult } from 'express-validator'
+import User from '../models/User.js'
+import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -75,8 +75,8 @@ router.delete('/', auth, async (req, res) => {
 // Get user statistics
 router.get('/stats', auth, async (req, res) => {
   try {
-    const Order = require('../models/Order')
-    const Prescription = require('../models/Prescription')
+    const { default: Order } = await import('../models/Order.js')
+    const { default: Prescription } = await import('../models/Prescription.js')
     
     const [ordersCount, prescriptionsCount] = await Promise.all([
       Order.countDocuments({ user: req.user._id }),
@@ -94,7 +94,7 @@ router.get('/stats', auth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 
 

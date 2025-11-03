@@ -1,9 +1,9 @@
-const express = require('express')
-const { body, validationResult } = require('express-validator')
-const User = require('../../models/User')
-const { auth } = require('../middleware/auth')
-const { sendOtpSms } = require('../services/otpProvider')
-const { generateOtp, verifyOtp, createUserAndTokens, refreshAccessToken, createTokens } = require('../services/otpService')
+import express from 'express'
+import { body, validationResult } from 'express-validator'
+import User from '../../models/User.js'
+import { auth } from '../middleware/auth.js'
+import { sendOtpSms } from '../services/otpProvider.js'
+import { generateOtp, verifyOtp, createUserAndTokens, refreshAccessToken, createTokens } from '../services/otpService.js'
 
 const router = express.Router()
 
@@ -383,4 +383,4 @@ router.post('/logout', auth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router

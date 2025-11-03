@@ -1,12 +1,13 @@
-const mongoose = require('mongoose')
-const bcrypt = require('bcryptjs')
-const { connectDB, disconnectDB } = require('../src/db')
-require('dotenv').config()
+import mongoose from 'mongoose'
+import bcrypt from 'bcryptjs'
+import { connectDB, disconnectDB } from '../src/db.js'
+import dotenv from 'dotenv'
+dotenv.config()
 
 // Import models
-const User = require('../models/User')
-const Product = require('../models/Product')
-const Otp = require('../models/Otp')
+import User from '../models/User.js'
+import Product from '../models/Product.js'
+import Otp from '../models/Otp.js'
 
 // Sample products data
 const sampleProducts = [
@@ -190,12 +191,14 @@ const seedDatabase = async () => {
 }
 
 // Run seed function
-if (require.main === module) {
+import { fileURLToPath } from 'url'
+const __filename = fileURLToPath(import.meta.url)
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   seedDatabase().catch((error) => {
     console.error('Fatal error:', error)
     process.exit(1)
   })
 }
 
-module.exports = { seedDatabase }
+export { seedDatabase }
 

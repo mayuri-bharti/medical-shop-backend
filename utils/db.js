@@ -1,11 +1,11 @@
-const mongoose = require('mongoose')
+import mongoose from 'mongoose'
 
 /**
  * Connect to MongoDB
  * @param {string} mongoUri - MongoDB connection string
  * @returns {Promise<mongoose.Connection>}
  */
-const connectDB = async (mongoUri) => {
+export const connectDB = async (mongoUri) => {
   try {
     const conn = await mongoose.connect(mongoUri)
     console.log(`MongoDB Connected: ${conn.connection.host}`)
@@ -28,9 +28,6 @@ const disconnectDB = async () => {
   }
 }
 
-module.exports = {
-  connectDB,
-  disconnectDB
-}
+export { disconnectDB }
 
 

@@ -1,12 +1,13 @@
-const express = require('express')
-const mongoose = require('mongoose')
-const cors = require('cors')
-const helmet = require('helmet')
-const compression = require('compression')
-const morgan = require('morgan')
-const cookieParser = require('cookie-parser')
-const rateLimit = require('express-rate-limit')
-require('dotenv').config()
+import express from 'express'
+import mongoose from 'mongoose'
+import cors from 'cors'
+import helmet from 'helmet'
+import compression from 'compression'
+import morgan from 'morgan'
+import cookieParser from 'cookie-parser'
+import rateLimit from 'express-rate-limit'
+import dotenv from 'dotenv'
+dotenv.config()
 
 const app = express()
 
@@ -49,12 +50,19 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-s
 .catch(err => console.error('MongoDB connection error:', err))
 
 // Routes - using src/routes for auth with OTP service
-app.use('/api/auth', require('./src/routes/auth'))
-app.use('/api/products', require('./routes/products'))
-app.use('/api/cart', require('./routes/cart'))
-app.use('/api/orders', require('./routes/orders'))
-app.use('/api/prescriptions', require('./routes/prescriptions'))
-app.use('/api/profile', require('./routes/profile'))
+import authRoutes from './src/routes/auth.js'
+import productRoutes from './routes/products.js'
+import cartRoutes from './routes/cart.js'
+import orderRoutes from './routes/orders.js'
+import prescriptionRoutes from './routes/prescriptions.js'
+import profileRoutes from './routes/profile.js'
+
+app.use('/api/auth', authRoutes)
+app.use('/api/products', productRoutes)
+app.use('/api/cart', cartRoutes)
+app.use('/api/orders', orderRoutes)
+app.use('/api/prescriptions', prescriptionRoutes)
+app.use('/api/profile', profileRoutes)
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

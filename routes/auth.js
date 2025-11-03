@@ -1,8 +1,8 @@
-const express = require('express')
-const jwt = require('jsonwebtoken')
-const { body, validationResult } = require('express-validator')
-const User = require('../models/User')
-const { auth } = require('../middleware/auth')
+import express from 'express'
+import jwt from 'jsonwebtoken'
+import { body, validationResult } from 'express-validator'
+import User from '../models/User.js'
+import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -134,7 +134,7 @@ router.post('/logout', auth, async (req, res) => {
   res.json({ message: 'Logout successful' })
 })
 
-module.exports = router
+export default router
 
 
 
