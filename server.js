@@ -37,7 +37,10 @@ app.use(cookieParser())
 app.use(morgan('combined'))
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop',
+  'https://medical-shop-frontend-beryl.vercel.app/',
+
+)
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('MongoDB connection error:', err))
 
