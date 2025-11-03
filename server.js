@@ -24,9 +24,13 @@ app.use('/api/', limiter)
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'https://medical-shop-frontend-beryl.vercel.app'
+  ],
   credentials: true
 }))
+
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
@@ -38,7 +42,7 @@ app.use(morgan('combined'))
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop',
-  'https://medical-shop-frontend-beryl.vercel.app/',
+  'mongodb+srv://devmayuribharti_db_user:MayuriBharti%40123@cluster0.l0uj59m.mongodb.net/medical-shop'
 
 )
 .then(() => console.log('Connected to MongoDB'))
