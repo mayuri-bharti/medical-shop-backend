@@ -2,15 +2,22 @@ const express = require('express')
 const helmet = require('helmet')
 const cors = require('cors')
 const morgan = require('morgan')
+const mongoose = require('mongoose')
 const { auth } = require('./middleware/auth')
 const rateLimit = require('express-rate-limit')
 require('dotenv').config()
+
+// Global error handlers to prevent Vercel crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason)
+})
 
 const { connectDB } = require('./db')
 const authRoutes = require('./routes/auth')
 const prescriptionRoutes = require('./routes/prescriptions')
 const cartRoutes = require('./routes/cart')
 const orderRoutes = require('./routes/orders')
+const productRoutes = require('../routes/products')
 const adminProductRoutes = require('./routes/admin/products')
 
 // Initialize Express app
@@ -23,7 +30,7 @@ app.use(helmet())
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
-  "https://medical-shop-frontend-beryl.vercel.app/"
+  "https://medical-shop-frontend-beryl.vercel.app"
 ];
 
 app.use(cors({
@@ -86,6 +93,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
+app.use('/api/products', productRoutes)
 app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
@@ -101,15 +109,7 @@ app.get('/', (req, res) => {
   })
 })
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    success: false,
-    message: 'Route not found' 
-  })
-})
-
-// Global error handler
+// Global error handler (MUST be before 404 handler)
 app.use((err, req, res, next) => {
   console.error('Error:', err)
   
@@ -129,9 +129,22 @@ app.use((err, req, res, next) => {
   })
 })
 
-// Connect to MongoDB
+// 404 handler (MUST be last)
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: 'Route not found' 
+  })
+})
+
+// Connect to MongoDB (with connection reuse for serverless)
 if (process.env.MONGO_URL) {
-  connectDB(process.env.MONGO_URL).catch(console.error)
+  // Check if already connected (Vercel serverless reuse)
+  if (mongoose.connection.readyState === 1) {
+    console.log('✅ MongoDB Already Connected (Reused)')
+  } else {
+    connectDB(process.env.MONGO_URL).catch(console.error)
+  }
 } else {
   console.error('❌ MONGO_URL environment variable is not set')
 }

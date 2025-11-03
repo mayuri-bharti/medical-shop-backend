@@ -37,8 +37,8 @@ const connectDB = async (mongoUrl) => {
     return conn
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message)
-    // Don't exit in test environment
-    if (process.env.NODE_ENV !== 'test') {
+    // Don't exit in test or serverless environment
+    if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
       process.exit(1)
     }
     throw error
