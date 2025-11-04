@@ -18,20 +18,21 @@ app.use(compression())
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 100,
   message: 'Too many requests from this IP, please try again later.'
 })
 app.use('/api/', limiter)
 
-// CORS configuration
+// ✅ CORS configuration (fixed)
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://medical-shop-frontend-beryl.vercel.app'
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://medical-shop-frontend.vercel.app'
   ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }))
-
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
@@ -41,15 +42,18 @@ app.use(cookieParser())
 // Logging
 app.use(morgan('combined'))
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop',
-  'mongodb+srv://devmayuribharti_db_user:MayuriBharti%40123@cluster0.l0uj59m.mongodb.net/medical-shop'
-
+// ✅ Database connection (fixed)
+mongoose.connect(
+  process.env.MONGODB_URI || 'mongodb+srv://devmayuribharti_db_user:MayuriBharti%40123@cluster0.l0uj59m.mongodb.net/medical-shop',
+  {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  }
 )
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err))
+.then(() => console.log('✅ Connected to MongoDB'))
+.catch(err => console.error('❌ MongoDB connection error:', err))
 
-// Routes - using src/routes for auth with OTP service
+// Routes
 import authRoutes from './src/routes/auth.js'
 import productRoutes from './routes/products.js'
 import cartRoutes from './routes/cart.js'
@@ -64,19 +68,19 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/prescriptions', prescriptionRoutes)
 app.use('/api/profile', profileRoutes)
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   })
 })
 
-// Error handling middleware
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack)
-  res.status(500).json({ 
+  res.status(500).json({
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : {}
   })
@@ -88,12 +92,7 @@ app.use('*', (req, res) => {
 })
 
 const PORT = process.env.PORT || 5000
-
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
+  console.log(`🚀 Server running on port ${PORT}`)
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
 })
-
-
-
-
