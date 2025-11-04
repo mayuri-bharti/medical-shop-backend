@@ -29,10 +29,12 @@ const app = express()
 // Security middleware
 app.use(helmet())
 
-// CORS configuration - allow all Vercel deployments and localhost
+// CORS configuration - optimized for Vercel and mobile browsers
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
   /^https:\/\/.*\.vercel\.app$/, // Allow all Vercel deployments
   /^https:\/\/.*\.netlify\.app$/, // Allow Netlify deployments
   process.env.FRONTEND_URL,
@@ -41,7 +43,8 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
+    // Always allow requests with no origin (mobile apps, Postman, curl, etc.)
+    // This is important for mobile browsers and some mobile apps
     if (!origin) {
       return callback(null, true);
     }
@@ -57,24 +60,26 @@ app.use(cors({
       return false;
     });
 
+    // In production/Vercel, always allow for better mobile compatibility
+    // This ensures mobile browsers work correctly
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      return callback(null, true);
+    }
+
+    // In development, be more strict
     if (isAllowed) {
       callback(null, true);
     } else {
-      // In production, log but allow for better mobile compatibility
-      if (process.env.NODE_ENV === 'production') {
-        console.warn("CORS: Origin not in allowed list, but allowing:", origin);
-        return callback(null, true); // Allow in production for better mobile support
-      } else {
-        console.warn("Blocked by CORS:", origin);
-        return callback(new Error('Not allowed by CORS'));
-      }
+      console.warn("CORS: Blocked origin in development:", origin);
+      return callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   exposedHeaders: ["Content-Range", "X-Content-Range"],
-  maxAge: 86400 // 24 hours preflight cache
+  maxAge: 86400, // 24 hours preflight cache
+  optionsSuccessStatus: 200 // Some mobile browsers need this
 }));
 
 

@@ -57,12 +57,22 @@ const getAllProducts = async (req, res) => {
           sortBy = { price: -1 }
           break
         case 'rating':
-          sortBy = { 'rating.average': -1 }
+          // Rating field doesn't exist in Product model, fallback to createdAt
+          sortBy = { createdAt: -1 }
           break
         case 'created':
           sortBy = { createdAt: -1 }
           break
       }
+    }
+
+    // Check database connection
+    if (mongoose.connection.readyState !== 1) {
+      console.error('Database not connected. ReadyState:', mongoose.connection.readyState)
+      return res.status(503).json({ 
+        success: false,
+        message: 'Database connection unavailable. Please try again in a moment.' 
+      })
     }
 
     // Fetch products from MongoDB
@@ -71,8 +81,14 @@ const getAllProducts = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .select('-__v')
+      .lean() // Use lean() for better performance on Vercel
 
     const total = await Product.countDocuments(filter)
+
+    // Log successful response (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Successfully fetched ${products.length} products (page ${page}, total: ${total})`)
+    }
 
     res.json({
       success: true,
@@ -86,9 +102,22 @@ const getAllProducts = async (req, res) => {
     })
   } catch (error) {
     console.error('Get products error:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
+    
+    // Provide more detailed error information
+    const errorMessage = error.message || 'Failed to fetch products'
+    
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch products' 
+      message: errorMessage,
+      ...(process.env.NODE_ENV === 'development' && { 
+        error: error.stack,
+        details: error 
+      })
     })
   }
 }
