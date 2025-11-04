@@ -82,8 +82,24 @@ const getAllProducts = async (req, res) => {
           })
         }
         
-        // Try to connect
-        await connectDB(mongoUrl)
+        // Check if connection is in progress (readyState 2 = connecting)
+        if (mongoose.connection.readyState === 2) {
+          // Wait for connection to complete
+          await new Promise((resolve, reject) => {
+            mongoose.connection.once('connected', resolve)
+            mongoose.connection.once('error', reject)
+            setTimeout(() => reject(new Error('Connection timeout')), 10000)
+          })
+        } else {
+          // Try to connect
+          await connectDB(mongoUrl)
+        }
+        
+        // Wait for connection to be fully ready
+        if (mongoose.connection.readyState !== 1) {
+          throw new Error('Connection not ready after connect attempt')
+        }
+        
         console.log('✅ Database connected successfully')
       } catch (dbError) {
         console.error('❌ Failed to connect to database:', dbError.message)
