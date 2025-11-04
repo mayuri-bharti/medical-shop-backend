@@ -3,6 +3,7 @@ import { body, validationResult, query } from 'express-validator'
 import mongoose from 'mongoose'
 import Product from '../models/Product.js'
 import { auth, adminAuth } from '../middleware/auth.js'
+import { connectDB } from '../src/db.js'
 
 const router = express.Router()
 
@@ -67,13 +68,30 @@ const getAllProducts = async (req, res) => {
       }
     }
 
-    // Check database connection
+    // Ensure database connection (Vercel serverless might need connection on first request)
     if (mongoose.connection.readyState !== 1) {
-      console.error('Database not connected. ReadyState:', mongoose.connection.readyState)
-      return res.status(503).json({ 
-        success: false,
-        message: 'Database connection unavailable. Please try again in a moment.' 
-      })
+      console.log('Database not connected, attempting to connect... ReadyState:', mongoose.connection.readyState)
+      
+      try {
+        const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI
+        if (!mongoUrl) {
+          console.error('❌ MongoDB connection string not found')
+          return res.status(503).json({ 
+            success: false,
+            message: 'Database configuration error. Please contact support.' 
+          })
+        }
+        
+        // Try to connect
+        await connectDB(mongoUrl)
+        console.log('✅ Database connected successfully')
+      } catch (dbError) {
+        console.error('❌ Failed to connect to database:', dbError.message)
+        return res.status(503).json({ 
+          success: false,
+          message: 'Database connection unavailable. Please try again in a moment.' 
+        })
+      }
     }
 
     // Fetch products from MongoDB
