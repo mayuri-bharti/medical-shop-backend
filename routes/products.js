@@ -1,5 +1,6 @@
 import express from 'express'
 import { body, validationResult, query } from 'express-validator'
+import mongoose from 'mongoose'
 import Product from '../models/Product.js'
 import { auth, adminAuth } from '../middleware/auth.js'
 
