@@ -1,5 +1,6 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
+import mongoose from 'mongoose'
 import User from '../../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { sendOtpSms } from '../services/otpProvider.js'
@@ -103,6 +104,14 @@ router.post('/send-otp', checkRateLimit, [
     .trim()
 ], async (req, res) => {
   try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
     // Validate input
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -199,6 +208,14 @@ router.post('/verify-otp', checkRateLimit, [
     .withMessage('Please provide a valid 6-digit OTP')
 ], async (req, res) => {
   try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
     // Validate input
     const errors = validationResult(req)
     if (!errors.isEmpty()) {

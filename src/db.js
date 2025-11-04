@@ -7,12 +7,25 @@ import mongoose from 'mongoose'
  */
 export const connectDB = async (mongoUrl) => {
   try {
-    const options = {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
+    // If already connected, return immediately
+    if (mongoose.connection.readyState === 1) {
+      console.log('✅ MongoDB Already Connected')
+      return mongoose.connection
     }
 
+    // Configure mongoose to fail fast if not connected
+    mongoose.set('bufferCommands', false)
+    // Enable strict mode
+    mongoose.set('strictQuery', true)
+
+    const options = {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 30000, // 30 seconds for Atlas
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
+    }
+
+    console.log('🔄 Attempting to connect to MongoDB...')
     const conn = await mongoose.connect(mongoUrl, options)
     
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
@@ -37,9 +50,22 @@ export const connectDB = async (mongoUrl) => {
     return conn
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message)
+    
+    // Provide helpful error messages
+    if (error.message.includes('authentication')) {
+      console.error('💡 Check your MongoDB username and password in the connection string')
+    } else if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+      console.error('💡 Connection timeout - Check your network connection and MongoDB Atlas IP whitelist')
+      console.error('💡 Make sure your IP address is whitelisted in MongoDB Atlas Network Access')
+    } else if (error.message.includes('ENOTFOUND') || error.message.includes('DNS')) {
+      console.error('💡 DNS error - Check if the MongoDB hostname is correct')
+    } else if (error.message.includes('connection')) {
+      console.error('💡 Connection failed - Verify MongoDB is running and accessible')
+    }
+    
     // Don't exit in test or serverless environment
     if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-      process.exit(1)
+      console.error('⚠️  Server will start but database operations may fail')
     }
     throw error
   }

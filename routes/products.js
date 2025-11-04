@@ -5,18 +5,17 @@ import { auth, adminAuth } from '../middleware/auth.js'
 
 const router = express.Router()
 
-// Get all products with filtering and pagination
-router.get('/', [
-  query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 100 }),
-  query('category').optional().isString(),
-  query('search').optional().isString(),
-  query('sort').optional().isIn(['name', 'price_asc', 'price_desc', 'rating', 'created'])
-], async (req, res) => {
+/**
+ * Controller: getAllProducts
+ * Fetches all products from MongoDB with optional filtering and pagination
+ * Route: GET /api/products
+ */
+const getAllProducts = async (req, res) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
       return res.status(400).json({ 
+        success: false,
         message: 'Validation failed',
         errors: errors.array()
       })
@@ -27,7 +26,7 @@ router.get('/', [
     const skip = (page - 1) * limit
     const { category, search, sort } = req.query
 
-    // Build filter
+    // Build filter - only show active products
     const filter = { isActive: true }
     
     if (category) {
@@ -35,7 +34,13 @@ router.get('/', [
     }
     
     if (search) {
-      filter.$text = { $search: search }
+      // Use regex for search instead of text index (more reliable)
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { brand: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
+      ]
     }
 
     // Build sort
@@ -60,6 +65,7 @@ router.get('/', [
       }
     }
 
+    // Fetch products from MongoDB
     const products = await Product.find(filter)
       .sort(sortBy)
       .skip(skip)
@@ -69,6 +75,7 @@ router.get('/', [
     const total = await Product.countDocuments(filter)
 
     res.json({
+      success: true,
       products,
       pagination: {
         page,
@@ -79,9 +86,21 @@ router.get('/', [
     })
   } catch (error) {
     console.error('Get products error:', error)
-    res.status(500).json({ message: 'Failed to fetch products' })
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch products' 
+    })
   }
-})
+}
+
+// Get all products with filtering and pagination
+router.get('/', [
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  query('category').optional().isString(),
+  query('search').optional().isString(),
+  query('sort').optional().isIn(['name', 'price_asc', 'price_desc', 'rating', 'created'])
+], getAllProducts)
 
 // Get single product
 router.get('/:id', async (req, res) => {
@@ -129,10 +148,17 @@ router.post('/', adminAuth, [
     const product = new Product(req.body)
     await product.save()
 
-    res.status(201).json(product)
+    res.status(201).json({
+      success: true,
+      message: 'Product created successfully',
+      product
+    })
   } catch (error) {
     console.error('Create product error:', error)
-    res.status(500).json({ message: 'Failed to create product' })
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to create product' 
+    })
   }
 })
 
@@ -146,13 +172,23 @@ router.put('/:id', adminAuth, async (req, res) => {
     )
 
     if (!product) {
-      return res.status(404).json({ message: 'Product not found' })
+      return res.status(404).json({ 
+        success: false,
+        message: 'Product not found' 
+      })
     }
 
-    res.json(product)
+    res.json({
+      success: true,
+      message: 'Product updated successfully',
+      product
+    })
   } catch (error) {
     console.error('Update product error:', error)
-    res.status(500).json({ message: 'Failed to update product' })
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to update product' 
+    })
   }
 })
 
@@ -169,10 +205,16 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Product not found' })
     }
 
-    res.json({ message: 'Product deleted successfully' })
+    res.json({ 
+      success: true,
+      message: 'Product deleted successfully' 
+    })
   } catch (error) {
     console.error('Delete product error:', error)
-    res.status(500).json({ message: 'Failed to delete product' })
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to delete product' 
+    })
   }
 })
 

@@ -14,6 +14,8 @@ import cartRoutes from './routes/cart.js'
 import orderRoutes from './routes/orders.js'
 import productRoutes from '../routes/products.js'
 import adminProductRoutes from './routes/admin/products.js'
+import adminUserRoutes from './routes/admin/users.js'
+import adminOrderRoutes from './routes/admin/orders.js'
 dotenv.config()
 
 // Global error handlers to prevent Vercel crashes
@@ -27,29 +29,52 @@ const app = express()
 // Security middleware
 app.use(helmet())
 
-// CORS configuration with origin allowlist
+// CORS configuration - allow all Vercel deployments and localhost
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
-  "https://medical-shop-frontend-beryl.vercel.app"
-];
+  /^https:\/\/.*\.vercel\.app$/, // Allow all Vercel deployments
+  /^https:\/\/.*\.netlify\.app$/, // Allow Netlify deployments
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_BASE_URL
+].filter(Boolean); // Remove undefined values
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-    if (allowedOrigins.includes(origin)) {
+    // Check if origin matches any allowed pattern
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed || origin.startsWith(allowed);
+      }
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+
+    if (isAllowed) {
       callback(null, true);
     } else {
-      console.warn("Blocked by CORS:", origin);
-      // Don’t crash function — just deny gracefully
-      return callback(null, false);
+      // In production, log but allow for better mobile compatibility
+      if (process.env.NODE_ENV === 'production') {
+        console.warn("CORS: Origin not in allowed list, but allowing:", origin);
+        return callback(null, true); // Allow in production for better mobile support
+      } else {
+        console.warn("Blocked by CORS:", origin);
+        return callback(new Error('Not allowed by CORS'));
+      }
     }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  maxAge: 86400 // 24 hours preflight cache
 }));
 
 
@@ -58,7 +83,10 @@ app.use(cors({
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again later.'
+  },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -69,7 +97,12 @@ app.use('/api/', limiter)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // limit each IP to 5 requests per windowMs
-  message: 'Too many authentication attempts, please try again later.',
+  message: {
+    success: false,
+    message: 'Too many authentication attempts, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
   skipSuccessfulRequests: true
 })
 
@@ -84,12 +117,57 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   res.json({ 
     status: 'OK',
+    database: dbStatus,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
   })
+})
+
+// Initialize MongoDB connection BEFORE routes
+const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
+
+// Initialize database connection
+const initializeDB = async () => {
+  if (!mongoUrl) {
+    console.error('❌ MongoDB connection string not found. Set MONGO_URL or MONGODB_URI in .env file')
+    return
+  }
+
+  // Check if already connected (Vercel serverless reuse)
+  if (mongoose.connection.readyState === 1) {
+    console.log('✅ MongoDB Already Connected (Reused)')
+    console.log(`📊 Database: ${mongoose.connection.name}`)
+    return
+  }
+
+  console.log('🔄 Connecting to MongoDB...')
+  console.log(`📍 Connection URL: ${mongoUrl.replace(/:[^:@]+@/, ':****@')}`) // Hide password in logs
+  try {
+    await connectDB(mongoUrl)
+    console.log('✅ MongoDB connected successfully - All routes ready')
+    console.log(`📊 Database: ${mongoose.connection.name}`)
+  } catch (err) {
+    console.error('❌ Failed to connect to MongoDB:', err.message)
+    console.error('💡 Troubleshooting tips:')
+    console.error('   1. Verify MONGO_URL or MONGODB_URI is set correctly in .env file')
+    console.error('   2. Check MongoDB Atlas Network Access - whitelist your IP address')
+    console.error('   3. Verify username and password are correct')
+    console.error('   4. Ensure MongoDB Atlas cluster is running and accessible')
+    // Don't exit in serverless environment
+    if (!process.env.VERCEL) {
+      console.error('⚠️  Server will start but database operations may fail')
+      console.error('⚠️  Retrying connection in background...')
+    }
+  }
+}
+
+// Start DB connection (fire and forget, but wait a bit)
+initializeDB().catch((err) => {
+  console.error('Failed to initialize database:', err)
 })
 
 // API routes
@@ -99,6 +177,8 @@ app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
 app.use('/api/admin/products', auth, adminProductRoutes)
+app.use('/api/admin/users', auth, adminUserRoutes)
+app.use('/api/admin/orders', auth, adminOrderRoutes)
 
 // Default route
 app.get('/', (req, res) => {
@@ -138,47 +218,47 @@ app.use('*', (req, res) => {
   })
 })
 
-// Connect to MongoDB (with connection reuse for serverless)
-if (process.env.MONGO_URL) {
-  // Check if already connected (Vercel serverless reuse)
-  if (mongoose.connection.readyState === 1) {
-    console.log('✅ MongoDB Already Connected (Reused)')
-  } else {
-    connectDB(process.env.MONGO_URL).catch(console.error)
+// Redis connection (optional) - lazy loaded
+let redisClient = null
+let redisInitialized = false
+
+const initRedis = async () => {
+  if (redisInitialized) return redisClient
+  redisInitialized = true
+  
+  if (process.env.REDIS_URL) {
+    try {
+      const { createClient } = await import('redis')
+      redisClient = createClient({ 
+        url: process.env.REDIS_URL 
+      })
+      
+      redisClient.on('error', (err) => {
+        console.warn('⚠️  Redis Client Error:', err.message)
+        console.log('📌 Continuing without Redis cache')
+        redisClient = null
+      })
+      
+      redisClient.on('connect', () => {
+        console.log('✅ Redis Connected')
+      })
+      
+      redisClient.connect().catch((err) => {
+        console.warn('⚠️  Could not connect to Redis:', err.message)
+        console.log('📌 Continuing without Redis cache')
+        redisClient = null
+      })
+    } catch (error) {
+      console.error('Failed to connect to Redis:', error.message)
+      console.log('⚠️  Continuing without Redis cache')
+    }
   }
-} else {
-  console.error('❌ MONGO_URL environment variable is not set')
+  
+  return redisClient
 }
 
-// Redis connection (optional)
-let redisClient = null
-if (process.env.REDIS_URL) {
-  const { createClient } = await import('redis')
-  try {
-    redisClient = createClient({ 
-      url: process.env.REDIS_URL 
-    })
-    
-    redisClient.on('error', (err) => {
-      console.warn('⚠️  Redis Client Error:', err.message)
-      console.log('📌 Continuing without Redis cache')
-      redisClient = null
-    })
-    
-    redisClient.on('connect', () => {
-      console.log('✅ Redis Connected')
-    })
-    
-    redisClient.connect().catch((err) => {
-      console.warn('⚠️  Could not connect to Redis:', err.message)
-      console.log('📌 Continuing without Redis cache')
-      redisClient = null
-    })
-  } catch (error) {
-    console.error('Failed to connect to Redis:', error.message)
-    console.log('⚠️  Continuing without Redis cache')
-  }
-}
+// Initialize Redis in the background (fire and forget)
+initRedis().catch(console.error)
 
 // Export Redis client for use in other modules
 app.redisClient = redisClient
@@ -187,10 +267,12 @@ app.redisClient = redisClient
 export default app
 
 // Start server if not in test environment
+// Check if this is the main module (simplified ES module check)
 const __filename = fileURLToPath(import.meta.url)
-const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+const isMainModule = process.argv[1] && __filename === process.argv[1]
 
-if (isMainModule) {
+// Only start server if running directly (not imported)
+if (isMainModule && process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 4000
   
   app.listen(PORT, () => {

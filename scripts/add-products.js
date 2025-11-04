@@ -252,7 +252,10 @@ const addProducts = async () => {
 // Run function
 import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+const isMainModule = process.argv[1] && __filename === process.argv[1]
+
+// Always run if called directly
+if (isMainModule || process.argv[1]?.endsWith('add-products.js')) {
   addProducts().catch((error) => {
     console.error('Fatal error:', error)
     process.exit(1)

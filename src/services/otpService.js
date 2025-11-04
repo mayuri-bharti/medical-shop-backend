@@ -53,8 +53,27 @@ const initRedisClient = async () => {
  * - 429: Rate limit exceeded (too many requests)
  * - 500: Internal server error
  */
+// Ensure MongoDB is connected before running queries
+const ensureDBConnection = async () => {
+  const maxRetries = 5
+  let retries = 0
+  
+  while (mongoose.connection.readyState !== 1 && retries < maxRetries) {
+    await new Promise(resolve => setTimeout(resolve, 200))
+    retries++
+  }
+  
+  if (mongoose.connection.readyState !== 1) {
+    console.error('❌ MongoDB not connected. State:', mongoose.connection.readyState)
+    throw new Error('Database connection not ready. Please try again in a moment.')
+  }
+}
+
 const generateOtp = async (phone, purpose = 'LOGIN') => {
   try {
+    // Ensure MongoDB is connected
+    await ensureDBConnection()
+    
     // Check rate limit (max 3 sends per hour)
     const rateLimitResult = await checkRateLimit(phone)
     
@@ -151,26 +170,33 @@ const checkRateLimit = async (phone) => {
   }
   
   // Fallback: Check database
-  const oneHourAgo = new Date(currentTime - ONE_HOUR_MS)
-  
-  const recentOtp = await Otp.findOne({
-    phone,
-    createdAt: { $gte: oneHourAgo }
-  }).sort({ createdAt: -1 })
-  
-  if (recentOtp) {
-    // Calculate send count in last hour
-    const otpsInLastHour = await Otp.countDocuments({
+  try {
+    await ensureDBConnection()
+    const oneHourAgo = new Date(currentTime - ONE_HOUR_MS)
+    
+    const recentOtp = await Otp.findOne({
       phone,
       createdAt: { $gte: oneHourAgo }
-    })
+    }).sort({ createdAt: -1 })
     
-    if (otpsInLastHour >= MAX_SENDS_PER_HOUR) {
-      return {
-        allowed: false,
-        message: 'Too many OTP requests. Please try again after some time.'
+    if (recentOtp) {
+      // Calculate send count in last hour
+      const otpsInLastHour = await Otp.countDocuments({
+        phone,
+        createdAt: { $gte: oneHourAgo }
+      })
+      
+      if (otpsInLastHour >= MAX_SENDS_PER_HOUR) {
+        return {
+          allowed: false,
+          message: 'Too many OTP requests. Please try again after some time.'
+        }
       }
     }
+  } catch (dbError) {
+    console.error('Database error in rate limit check:', dbError.message)
+    // Allow request if DB check fails (fail open)
+    return { allowed: true, message: 'OK' }
   }
   
   return { allowed: true, message: 'OK' }
@@ -210,6 +236,9 @@ const updateRateLimit = async (phone) => {
  */
 const verifyOtp = async (phone, otp, purpose = 'LOGIN') => {
   try {
+    // Ensure MongoDB is connected
+    await ensureDBConnection()
+    
     // Find the latest unexpired OTP
     const otpDoc = await Otp.findOne({
       phone,

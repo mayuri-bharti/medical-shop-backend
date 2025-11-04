@@ -8,6 +8,10 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed": "node scripts/seed.js",
+    "add-admin": "node scripts/add-admin.js",
+    "add-products": "node scripts/add-products.js",
+    "add-product": "node scripts/add-single-product.js",
+    "verify-phone": "node scripts/verify-phone-twilio.js",
     "test": "jest",
     "test:watch": "jest --watch"
   },
