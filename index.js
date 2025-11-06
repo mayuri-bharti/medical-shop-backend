@@ -144,50 +144,51 @@ app.get('/api/health', (req, res) => {
 })
 
 // Initialize MongoDB connection BEFORE routes
-// const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
+const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
 
-// // Initialize database connection
-// const initializeDB = async () => {
-//   if (!mongoUrl) {
-//     console.error('❌ MongoDB connection string not found. Set MONGO_URL or MONGODB_URI in .env file')
-//     return
-//   }
+// Initialize database connection
+const initializeDB = async () => {
+  if (!mongoUrl) {
+    console.error('❌ MongoDB connection string not found. Set MONGO_URL or MONGODB_URI in .env file')
+    return
+  }
 
-//   // Check if already connected (Vercel serverless reuse)
-//   if (mongoose.connection.readyState === 1) {
-//     console.log('✅ MongoDB Already Connected (Reused)')
-//     console.log(`📊 Database: ${mongoose.connection.name}`)
-//     return
-//   }
+  // Check if already connected (Vercel serverless reuse)
+  if (mongoose.connection.readyState === 1) {
+    console.log('✅ MongoDB Already Connected (Reused)')
+    console.log(`📊 Database: ${mongoose.connection.name}`)
+    return
+  }
 
-//   console.log('🔄 Connecting to MongoDB...')
-//   console.log(`📍 Connection URL: ${mongoUrl.replace(/:[^:@]+@/, ':****@')}`) // Hide password in logs
-//   try {
-//     await connectDB(mongoUrl)
-//     console.log('✅ MongoDB connected successfully - All routes ready')
-//     console.log(`📊 Database: ${mongoose.connection.name}`)
-//   } catch (err) {
-//     console.error('❌ Failed to connect to MongoDB:', err.message)
-//     console.error('💡 Troubleshooting tips:')
-//     console.error('   1. Verify MONGO_URL or MONGODB_URI is set correctly in .env file')
-//     console.error('   2. Check MongoDB Atlas Network Access - whitelist your IP address')
-//     console.error('   3. Verify username and password are correct')
-//     console.error('   4. Ensure MongoDB Atlas cluster is running and accessible')
-//     // Don't exit in serverless environment
-//     if (!process.env.VERCEL) {
-//       console.error('⚠️  Server will start but database operations may fail')
-//       console.error('⚠️  Retrying connection in background...')
-//     }
-//   }
-// }
+  console.log('🔄 Connecting to MongoDB...')
+  console.log(`📍 Connection URL: ${mongoUrl.replace(/:[^:@]+@/, ':****@')}`) // Hide password in logs
+  try {
+    await connectDB(mongoUrl)
+    console.log('✅ MongoDB connected successfully - All routes ready')
+    console.log(`📊 Database: ${mongoose.connection.name}`)
+  } catch (err) {
+    console.error('❌ Failed to connect to MongoDB:', err.message)
+    console.error('💡 Troubleshooting tips:')
+    console.error('   1. Verify MONGO_URL or MONGODB_URI is set correctly in .env file')
+    console.error('   2. Check MongoDB Atlas Network Access - whitelist your IP address')
+    console.error('   3. Verify username and password are correct')
+    console.error('   4. Ensure MongoDB Atlas cluster is running and accessible')
+    // Don't exit in serverless environment
+    if (!process.env.VERCEL) {
+      console.error('⚠️  Server will start but database operations may fail')
+      console.error('⚠️  Retrying connection in background...')
+    }
+  }
+}
 
-// // Start DB connection (fire and forget, but wait a bit)
-// initializeDB().catch((err) => {
-//   console.error('Failed to initialize database:', err)
-// })
+// Start DB connection (fire and forget, but wait a bit)
+initializeDB().catch((err) => {
+  console.error('Failed to initialize database:', err)
+})
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
+console.log('✅ Auth routes registered at /api/auth')
 app.use('/api/admin/auth', authLimiter, adminAuthRoutes)
 console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
