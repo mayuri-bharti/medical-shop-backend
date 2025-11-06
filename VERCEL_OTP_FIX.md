@@ -181,3 +181,5 @@ medical-shop-backend/
 
 **Status:** ✅ Fixed - OTP should now work on Vercel!
 
+
+

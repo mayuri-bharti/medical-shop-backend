@@ -158,3 +158,5 @@ POST https://your-backend.vercel.app/api/auth/send-otp
 
 **Last Updated:** After fixing index.js duplicate connectDB call and enhancing api/index.js
 
+
+
