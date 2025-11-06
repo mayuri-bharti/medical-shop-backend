@@ -182,9 +182,12 @@ const initializeDB = async () => {
 }
 
 // Start DB connection (fire and forget, but wait a bit)
-initializeDB().catch((err) => {
-  console.error('Failed to initialize database:', err)
-})
+// Skip in Vercel serverless - api/index.js handles DB connection per-request
+if (!process.env.VERCEL) {
+  initializeDB().catch((err) => {
+    console.error('Failed to initialize database:', err)
+  })
+}
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
