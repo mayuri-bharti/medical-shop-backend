@@ -19,7 +19,6 @@ import adminUserRoutes from './src/routes/admin/users.js'
 import adminOrderRoutes from './src/routes/admin/orders.js'
 import profileRoutes from './routes/profile.js'
 dotenv.config()
-connectDB(process.env.MONGO_URL)
 
 // Global error handlers to prevent Vercel crashes
 process.on('unhandledRejection', (reason, promise) => {

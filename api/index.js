@@ -1,3 +1,9 @@
+/**
+ * Vercel Serverless Function Entry Point
+ * This file is the entry point for Vercel serverless functions
+ * It imports the Express app and ensures database connection per-request
+ */
+
 import app from '../index.js'
 import { connectDB } from '../src/db.js'
 import dotenv from 'dotenv'
@@ -54,7 +60,7 @@ ensureDBConnection().catch((error) => {
 // This MUST run before routes to ensure DB is connected
 app.use(async (req, res, next) => {
   // Only check for API routes
-  if (req.path.startsWith('/api')) {
+  if (req.path.startsWith('/api') || req.path === '/') {
     // If not connected, try to connect
     if (mongoose.connection.readyState !== 1) {
       try {
@@ -79,5 +85,17 @@ app.use(async (req, res, next) => {
   next()
 })
 
-export default app
+// Add a simple test route to verify serverless function is working
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Serverless API is working',
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    environment: process.env.NODE_ENV || 'production'
+  })
+})
 
+// Export the app for Vercel serverless function
+// DO NOT call app.listen() here - Vercel handles that
+export default app
