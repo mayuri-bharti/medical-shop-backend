@@ -1,5 +1,5 @@
 import express from 'express'
-import { adminAuth } from '../../middleware/auth.js'
+import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import User from '../../../models/User.js'
 
 const router = express.Router()
@@ -9,7 +9,7 @@ const router = express.Router()
  * Get all users (admin only)
  * Status codes: 200 (success), 403 (not admin), 500 (error)
  */
-router.get('/', adminAuth, async (req, res) => {
+router.get('/', verifyAdminToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1
     const limit = parseInt(req.query.limit) || 50

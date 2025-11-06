@@ -1,6 +1,6 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
-import mongoose from 'mongoose'
+import mongoose from 'mongoose';
 import User from '../../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { sendOtpSms } from '../services/otpProvider.js'
@@ -104,14 +104,29 @@ router.post('/send-otp', checkRateLimit, [
     .trim()
 ], async (req, res) => {
   try {
-    // Check MongoDB connection
+    console.log("1")
+    // Check MongoDB connection - wait a bit if connecting
     if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection not ready. Please try again in a moment.'
-      })
+      // If connecting (state 2), wait a moment
+      if (mongoose.connection.readyState === 2) {
+        let waited = 0
+        const maxWait = 3000 // 3 seconds
+        while (mongoose.connection.readyState === 2 && waited < maxWait) {
+          await new Promise(resolve => setTimeout(resolve, 200))
+          waited += 200
+          if (mongoose.connection.readyState === 1) break
+        }
+      }
+      
+      // If still not connected, return error
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+          success: false,
+          message: 'Database connection not ready. Please try again in a moment.'
+        })
+      }
     }
-
+    console.log("2")
     // Validate input
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -121,14 +136,14 @@ router.post('/send-otp', checkRateLimit, [
         errors: errors.array()
       })
     }
-
+    console.log("3")
     const { phone } = req.body
-    
+    console.log("4")
     // Generate OTP using service (includes rate limiting: 3 per hour)
     const result = await generateOtp(phone, 'LOGIN')
     
     console.log(`📱 Attempting to send OTP to ${phone} via ${process.env.OTP_PROVIDER || 'mock'}`)
-    
+    console.log("5")
     // Send OTP via SMS provider
     let smsResult
     try {

@@ -5,9 +5,9 @@ import mongoose from 'mongoose'
  * @param {string} mongoUri - MongoDB connection string
  * @returns {Promise<mongoose.Connection>}
  */
-export const connectDB = async (mongoUri) => {
+export const connectDB = async (MONGO_URL) => {
   try {
-    const conn = await mongoose.connect(mongoUri)
+    const conn = await mongoose.connect(MONGO_URL)
     console.log(`MongoDB Connected: ${conn.connection.host}`)
     return conn
   } catch (error) {

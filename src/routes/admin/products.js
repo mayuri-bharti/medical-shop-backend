@@ -1,6 +1,6 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
-import { adminAuth } from '../../middleware/auth.js'
+import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import Product from '../../../models/Product.js'
 
 const router = express.Router()
@@ -10,7 +10,7 @@ const router = express.Router()
  * Get all products with pagination
  * Status codes: 200 (success), 403 (not admin), 500 (error)
  */
-router.get('/', adminAuth, async (req, res) => {
+router.get('/', verifyAdminToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1
     const limit = parseInt(req.query.limit) || 20
@@ -61,7 +61,7 @@ router.get('/', adminAuth, async (req, res) => {
  * Create new product
  * Status codes: 201 (success), 400 (validation error), 403 (not admin), 500 (error)
  */
-router.post('/', adminAuth, [
+router.post('/', verifyAdminToken, [
   body('name').trim().notEmpty().withMessage('Product name is required'),
   body('brand').trim().notEmpty().withMessage('Brand is required'),
   body('sku').trim().notEmpty().withMessage('SKU is required').isUppercase().withMessage('SKU must be uppercase'),
@@ -69,8 +69,8 @@ router.post('/', adminAuth, [
   body('mrp').isFloat({ min: 0 }).withMessage('MRP must be a positive number'),
   body('stock').isInt({ min: 0 }).withMessage('Stock must be a non-negative integer'),
   body('description').trim().notEmpty().withMessage('Description is required'),
-  body('images').isArray().withMessage('Images must be an array'),
-  body('images.*').isURL().withMessage('Each image must be a valid URL'),
+  body('images').optional().isArray().withMessage('Images must be an array'),
+  body('images.*').optional().isString().withMessage('Each image must be a string URL'),
   body('category').optional().isIn([
     'Prescription Medicines',
     'OTC Medicines',
@@ -118,17 +118,46 @@ router.post('/', adminAuth, [
 })
 
 /**
+ * GET /admin/products/:id
+ * Get single product by ID
+ * Status codes: 200 (success), 403 (not admin), 404 (not found), 500 (error)
+ */
+router.get('/:id', verifyAdminToken, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: { product }
+    })
+  } catch (error) {
+    console.error('Get product error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch product'
+    })
+  }
+})
+
+/**
  * PUT /admin/products/:id
  * Update product
  * Status codes: 200 (success), 400 (validation error), 403 (not admin), 404 (not found), 500 (error)
  */
-router.put('/:id', adminAuth, [
+router.put('/:id', verifyAdminToken, [
   body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty'),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('mrp').optional().isFloat({ min: 0 }).withMessage('MRP must be a positive number'),
   body('stock').optional().isInt({ min: 0 }).withMessage('Stock must be a non-negative integer'),
   body('images').optional().isArray().withMessage('Images must be an array'),
-  body('images.*').optional().isURL().withMessage('Each image must be a valid URL')
+  body('images.*').optional().isString().withMessage('Each image must be a string URL')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -172,7 +201,7 @@ router.put('/:id', adminAuth, [
  * Delete (soft delete) product
  * Status codes: 200 (success), 403 (not admin), 404 (not found), 500 (error)
  */
-router.delete('/:id', adminAuth, async (req, res) => {
+router.delete('/:id', verifyAdminToken, async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(
       req.params.id,

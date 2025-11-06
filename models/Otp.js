@@ -13,7 +13,7 @@ const otpSchema = new mongoose.Schema({
   },
   purpose: {
     type: String,
-    enum: ['LOGIN', 'RESET'],
+    enum: ['LOGIN', 'RESET', 'ADMIN_LOGIN'],
     default: 'LOGIN',
     index: true
   },
