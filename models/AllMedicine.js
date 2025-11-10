@@ -54,7 +54,7 @@ const AllMedicineSchema = new Schema({
   }
 }, {
   timestamps: true,
-  collection: 'allmedecine'
+  collection: 'all_medicine'
 })
 
 export default mongoose.models.AllMedicine || mongoose.model('AllMedicine', AllMedicineSchema)

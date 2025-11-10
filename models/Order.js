@@ -3,8 +3,7 @@ import mongoose from 'mongoose'
 const orderItemSchema = new mongoose.Schema({
   product: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product',
-    required: true
+    ref: 'Product'
   },
   quantity: {
     type: Number,
@@ -22,6 +21,32 @@ const orderItemSchema = new mongoose.Schema({
   },
   image: {
     type: String
+  }
+}, { _id: false })
+
+const orderStatuses = [
+  'pending',
+  'confirmed',
+  'processing',
+  'shipped',
+  'delivered',
+  'cancelled'
+]
+
+const statusHistorySchema = new mongoose.Schema({
+  status: {
+    type: String,
+    enum: orderStatuses,
+    required: true
+  },
+  note: String,
+  changedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  changedAt: {
+    type: Date,
+    default: Date.now
   }
 }, { _id: false })
 
@@ -55,7 +80,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
+    enum: orderStatuses,
     default: 'pending',
     index: true
   },
@@ -79,6 +104,11 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Prescription'
   },
+  source: {
+    type: String,
+    enum: ['catalog', 'prescription', 'manual'],
+    default: 'catalog'
+  },
   paymentMethod: {
     type: String,
     enum: ['cod', 'online', 'wallet'],
@@ -91,6 +121,10 @@ const orderSchema = new mongoose.Schema({
   },
   notes: {
     type: String
+  },
+  statusHistory: {
+    type: [statusHistorySchema],
+    default: []
   }
 }, {
   timestamps: true,
@@ -112,6 +146,7 @@ orderSchema.index({ status: 1, createdAt: -1 }) // For orders by status
 orderSchema.index({ orderNumber: 1 }, { unique: true }) // Unique index on order number
 orderSchema.index({ user: 1, status: 1 }) // Compound index for user orders by status
 orderSchema.index({ createdAt: -1 }) // For recent orders
+orderSchema.index({ prescription: 1 })
 
 // Method to calculate total items
 orderSchema.methods.getTotalItems = function() {
@@ -119,8 +154,21 @@ orderSchema.methods.getTotalItems = function() {
 }
 
 // Method to update status
-orderSchema.methods.updateStatus = function(status) {
+orderSchema.methods.updateStatus = async function(status, { changedBy, note } = {}) {
+  if (!orderStatuses.includes(status)) {
+    throw new Error(`Invalid order status: ${status}`)
+  }
+
   this.status = status
+
+  const historyEntry = {
+    status,
+    changedBy,
+    note
+  }
+
+  this.statusHistory.push(historyEntry)
+
   return this.save()
 }
 
@@ -133,5 +181,17 @@ orderSchema.methods.cancelOrder = function(reason) {
   }
   throw new Error('Cannot cancel order in current status')
 }
+
+orderSchema.pre('save', function(next) {
+  if (this.isNew) {
+    if (!Array.isArray(this.statusHistory) || this.statusHistory.length === 0) {
+      this.statusHistory = [{
+        status: this.status || 'pending',
+        changedAt: this.createdAt || new Date()
+      }]
+    }
+  }
+  next()
+})
 
 export default mongoose.model('Order', orderSchema)

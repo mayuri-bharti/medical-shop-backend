@@ -17,6 +17,7 @@ import cartRoutes from './src/routes/cart.js'
 import orderRoutes from './src/routes/orders.js'
 import productRoutes from './routes/products.js'
 import allMedicineRoutes from './routes/allmedecine.js'
+import searchRoutes from './routes/search.js'
 import adminProductRoutes from './src/routes/admin/products.js'
 import adminUserRoutes from './src/routes/admin/users.js'
 import adminOrderRoutes from './src/routes/admin/orders.js'
@@ -267,6 +268,7 @@ app.use('/api/admin/auth', authLimiter, adminAuthRoutes)
 console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
 app.use('/api/allmedecine', allMedicineRoutes)
+app.use('/api/search', searchRoutes)
 app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)

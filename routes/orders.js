@@ -98,6 +98,7 @@ router.post('/', auth, [
       shippingAddress,
       paymentMethod,
       prescription,
+      source: prescription ? 'prescription' : 'catalog',
       subtotal: cart.subtotal,
       deliveryFee: cart.deliveryFee,
       taxes: cart.taxes,
