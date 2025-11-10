@@ -5,8 +5,10 @@ import morgan from 'morgan'
 import mongoose from 'mongoose'
 import { auth } from './src/middleware/auth.js'
 import rateLimit from 'express-rate-limit'
+import compression from 'compression'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import { connectDB } from './src/db.js'
 import authRoutes from './src/routes/auth.js'
 import adminAuthRoutes from './src/routes/adminAuth.js'
@@ -14,9 +16,11 @@ import prescriptionRoutes from './src/routes/prescriptions.js'
 import cartRoutes from './src/routes/cart.js'
 import orderRoutes from './src/routes/orders.js'
 import productRoutes from './routes/products.js'
+import allMedicineRoutes from './routes/allmedecine.js'
 import adminProductRoutes from './src/routes/admin/products.js'
 import adminUserRoutes from './src/routes/admin/users.js'
 import adminOrderRoutes from './src/routes/admin/orders.js'
+import adminPrescriptionRoutes from './src/routes/admin/prescriptions.js'
 import profileRoutes from './routes/profile.js'
 dotenv.config()
 
@@ -29,7 +33,23 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express()
 
 // Security middleware
-app.use(helmet())
+app.use(helmet({
+  contentSecurityPolicy: false, // Allow inline scripts for better performance
+  crossOriginEmbedderPolicy: false
+}))
+
+// Compression middleware - compress all responses
+app.use(compression({
+  level: 6, // Compression level (1-9, 6 is good balance)
+  filter: (req, res) => {
+    // Don't compress if client doesn't support it
+    if (req.headers['x-no-compression']) {
+      return false
+    }
+    // Use compression for all text-based responses
+    return compression.filter(req, res)
+  }
+}))
 
 // CORS configuration - optimized for Vercel and mobile browsers
 const allowedOrigins = [
@@ -114,14 +134,58 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+// Serve static files from uploads directory (only in development)
+// On Vercel/production, use Cloudinary instead
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  const __filename = fileURLToPath(import.meta.url)
+  const __dirname = dirname(__filename)
+  app.use('/uploads', express.static(join(__dirname, 'uploads')))
+  console.log('📁 Static file serving enabled for local development')
+} else {
+  console.log('☁️  Using Cloudinary for file storage (production mode)')
+}
+
+// Performance monitoring middleware
+const performanceMonitor = (req, res, next) => {
+  const start = Date.now()
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start
+    const { method, url } = req
+    const { statusCode } = res
+    
+    // Log slow requests (>300ms)
+    if (duration > 300) {
+      console.warn(`⚠️  Slow Request: ${method} ${url} - ${duration}ms - Status: ${statusCode}`)
+    }
+    
+    // Log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📊 ${method} ${url} - ${duration}ms - Status: ${statusCode}`)
+    }
+  })
+  
+  next()
+}
+
+app.use(performanceMonitor)
+
 // Logging
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'))
 }
 
-// Health check endpoint
+// Health check endpoint with caching headers
 app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  
+  // Set cache headers (no cache for health check)
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  })
+  
   res.json({ 
     status: 'OK',
     database: dbStatus,
@@ -131,9 +195,17 @@ app.get('/health', (req, res) => {
   })
 })
 
-// API health check endpoint
+// API health check endpoint with caching headers
 app.get('/api/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  
+  // Set cache headers (no cache for health check)
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  })
+  
   res.json({
     status: 'OK',
     database: dbStatus,
@@ -194,6 +266,7 @@ console.log('✅ Auth routes registered at /api/auth')
 app.use('/api/admin/auth', authLimiter, adminAuthRoutes)
 console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
+app.use('/api/allmedecine', allMedicineRoutes)
 app.use('/api/prescriptions', auth, prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
@@ -201,6 +274,7 @@ app.use('/api/profile', auth, profileRoutes)
 app.use('/api/admin/products', adminProductRoutes)
 app.use('/api/admin/users', adminUserRoutes)
 app.use('/api/admin/orders', adminOrderRoutes)
+app.use('/api/admin/prescriptions', adminPrescriptionRoutes)
 
 // Default route
 app.get('/', (req, res) => {
@@ -290,8 +364,8 @@ export default app
 
 // Start server if not in test environment
 // Check if this is the main module (simplified ES module check)
-const __filename = fileURLToPath(import.meta.url)
-const isMainModule = process.argv[1] && __filename === process.argv[1]
+const currentFilename = fileURLToPath(import.meta.url)
+const isMainModule = process.argv[1] && currentFilename === process.argv[1]
 
 // Only start server if running directly (not imported)
 if (isMainModule && process.env.NODE_ENV !== 'test') {

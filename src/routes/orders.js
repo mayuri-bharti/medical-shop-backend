@@ -122,15 +122,32 @@ router.post('/', auth, [
 
 /**
  * GET /orders
- * Get user's orders
+ * Get user's orders with pagination
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 })
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+
+    const orders = await Order.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select('-__v')
+      .lean() // Use lean for better performance
+
+    const total = await Order.countDocuments({ user: req.user._id })
 
     res.json({
       success: true,
-      data: orders
+      data: orders,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
     })
   } catch (error) {
     console.error('Get orders error:', error)

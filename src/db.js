@@ -19,10 +19,13 @@ export const connectDB = async (mongoUrl) => {
     mongoose.set('strictQuery', true)
 
     const options = {
-      maxPoolSize: 10,
+      maxPoolSize: 10, // Maximum number of connections in pool
+      minPoolSize: 2, // Minimum number of connections in pool
       serverSelectionTimeoutMS: 30000, // 30 seconds for Atlas
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 30000,
+      socketTimeoutMS: 45000, // Socket timeout
+      connectTimeoutMS: 30000, // Connection timeout
+      maxIdleTimeMS: 30000, // Close connections after 30s of inactivity
+      heartbeatFrequencyMS: 10000, // Check connection health every 10s
     }
 
     console.log('🔄 Attempting to connect to MongoDB...')

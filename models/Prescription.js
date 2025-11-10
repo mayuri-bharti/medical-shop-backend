@@ -18,6 +18,10 @@ const prescriptionSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  cloudinaryPublicId: {
+    type: String,
+    // Store Cloudinary public ID for deletion
+  },
   fileType: {
     type: String,
     required: true,
@@ -33,8 +37,8 @@ const prescriptionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'rejected'],
-    default: 'pending'
+    enum: ['Pending', 'Verified', 'Completed'],
+    default: 'Pending'
   },
   doctorName: {
     type: String,
@@ -81,23 +85,14 @@ prescriptionSchema.virtual('fileExtension').get(function() {
   return this.originalName.split('.').pop().toLowerCase()
 })
 
-// Method to mark as processed
-prescriptionSchema.methods.markAsProcessed = function(processedBy, extractedMedicines) {
-  this.status = 'completed'
+// Method to update prescription status
+prescriptionSchema.methods.updateStatus = function(processedBy, status, notes) {
+  this.status = status
   this.processedBy = processedBy
   this.processedAt = new Date()
-  if (extractedMedicines) {
-    this.extractedMedicines = extractedMedicines
+  if (notes) {
+    this.notes = notes
   }
-  return this.save()
-}
-
-// Method to reject prescription
-prescriptionSchema.methods.reject = function(processedBy, reason) {
-  this.status = 'rejected'
-  this.processedBy = processedBy
-  this.processedAt = new Date()
-  this.notes = reason
   return this.save()
 }
 

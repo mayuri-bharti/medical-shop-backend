@@ -4,6 +4,7 @@ import mongoose from 'mongoose'
 import Product from '../models/Product.js'
 import { auth, adminAuth } from '../middleware/auth.js'
 import { connectDB } from '../src/db.js'
+import { cache, clearCache } from '../src/middleware/cache.js'
 
 const router = express.Router()
 
@@ -158,18 +159,21 @@ const getAllProducts = async (req, res) => {
 }
 
 // Get all products with filtering and pagination
+// Cache for 60 seconds (1 minute)
 router.get('/', [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('category').optional().isString(),
   query('search').optional().isString(),
   query('sort').optional().isIn(['name', 'price_asc', 'price_desc', 'rating', 'created'])
-], getAllProducts)
+], cache(60), getAllProducts)
 
-// Get single product
-router.get('/:id', async (req, res) => {
+// Get single product - Cache for 5 minutes
+router.get('/:id', cache(300), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
+      .select('-__v')
+      .lean() // Use lean for better performance
     
     if (!product) {
       return res.status(404).json({ message: 'Product not found' })
@@ -212,6 +216,9 @@ router.post('/', adminAuth, [
     const product = new Product(req.body)
     await product.save()
 
+    // Clear products cache when new product is created
+    await clearCache('cache:/api/products*')
+
     res.status(201).json({
       success: true,
       message: 'Product created successfully',
@@ -242,6 +249,9 @@ router.put('/:id', adminAuth, async (req, res) => {
       })
     }
 
+    // Clear products cache when product is updated
+    await clearCache('cache:/api/products*')
+
     res.json({
       success: true,
       message: 'Product updated successfully',
@@ -268,6 +278,9 @@ router.delete('/:id', adminAuth, async (req, res) => {
     if (!product) {
       return res.status(404).json({ message: 'Product not found' })
     }
+
+    // Clear products cache when product is deleted
+    await clearCache('cache:/api/products*')
 
     res.json({ 
       success: true,

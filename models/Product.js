@@ -68,9 +68,16 @@ const productSchema = new mongoose.Schema({
 })
 
 // Indexes for better query performance
+// Text index for search (compound index for better performance)
 productSchema.index({ name: 'text', brand: 'text', description: 'text' })
-productSchema.index({ category: 1, isActive: 1 })
-productSchema.index({ price: 1 })
+
+// Compound indexes for common queries
+productSchema.index({ category: 1, isActive: 1, price: 1 }) // For category filtering with sorting
+productSchema.index({ isActive: 1, createdAt: -1 }) // For active products sorted by date
+productSchema.index({ isActive: 1, price: 1 }) // For price sorting
+productSchema.index({ sku: 1 }, { unique: true }) // Unique index on SKU (already exists but explicit)
+productSchema.index({ category: 1 }) // Single field index for category
+productSchema.index({ price: 1 }) // Single field index for price
 
 // Virtual for discount percentage
 productSchema.virtual('discountPercentage').get(function() {

@@ -107,8 +107,11 @@ orderSchema.pre('save', async function(next) {
 })
 
 // Indexes for better query performance
-orderSchema.index({ user: 1, createdAt: -1 })
-orderSchema.index({ status: 1, createdAt: -1 })
+orderSchema.index({ user: 1, createdAt: -1 }) // For user's orders
+orderSchema.index({ status: 1, createdAt: -1 }) // For orders by status
+orderSchema.index({ orderNumber: 1 }, { unique: true }) // Unique index on order number
+orderSchema.index({ user: 1, status: 1 }) // Compound index for user orders by status
+orderSchema.index({ createdAt: -1 }) // For recent orders
 
 // Method to calculate total items
 orderSchema.methods.getTotalItems = function() {
