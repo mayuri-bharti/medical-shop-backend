@@ -1,21 +1,25 @@
 import mongoose from 'mongoose'
 
 const prescriptionStatuses = [
-  'submitted',
-  'in_review',
+  'pending',
   'approved',
   'rejected',
+  'processing',
+  'delivered',
+  'submitted',
+  'in_review',
   'ordered',
   'fulfilled',
-  'delivered',
   'cancelled'
 ]
 
 const timelineFieldsByStatus = {
+  pending: 'submittedAt',
   submitted: 'submittedAt',
   in_review: 'reviewedAt',
   approved: 'approvedAt',
   rejected: 'rejectedAt',
+  processing: 'reviewedAt',
   ordered: 'orderedAt',
   fulfilled: 'fulfilledAt',
   delivered: 'deliveredAt',
@@ -77,7 +81,7 @@ const prescriptionSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: prescriptionStatuses,
-    default: 'submitted',
+    default: 'pending',
     index: true
   },
   doctorName: {

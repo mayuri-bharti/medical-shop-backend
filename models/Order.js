@@ -25,10 +25,8 @@ const orderItemSchema = new mongoose.Schema({
 }, { _id: false })
 
 const orderStatuses = [
-  'pending',
-  'confirmed',
   'processing',
-  'shipped',
+  'out for delivery',
   'delivered',
   'cancelled'
 ]
@@ -81,16 +79,16 @@ const orderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: orderStatuses,
-    default: 'pending',
+    default: 'processing',
     index: true
   },
   shippingAddress: {
-    name: { type: String, required: true },
-    phoneNumber: { type: String, required: true },
-    address: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    pincode: { type: String, required: true },
+    name: { type: String },
+    phoneNumber: { type: String },
+    address: { type: String },
+    city: { type: String },
+    state: { type: String },
+    pincode: { type: String },
     landmark: String
   },
   trackingNumber: String,
@@ -100,23 +98,23 @@ const orderSchema = new mongoose.Schema({
     unique: true,
     index: true
   },
-  prescription: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Prescription'
+  prescriptionUrl: {
+    type: String
   },
-  source: {
+  prescriptionStorage: {
     type: String,
-    enum: ['catalog', 'prescription', 'manual'],
-    default: 'catalog'
+    enum: ['cloudinary', 'local', null],
+    default: null
   },
+  prescriptionPublicId: String,
   paymentMethod: {
     type: String,
-    enum: ['cod', 'online', 'wallet'],
-    default: 'cod'
+    enum: ['COD', 'ONLINE', 'WALLET'],
+    default: 'COD'
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'failed', 'refunded'],
+    enum: ['pending', 'paid', 'failed'],
     default: 'pending'
   },
   notes: {
@@ -146,7 +144,6 @@ orderSchema.index({ status: 1, createdAt: -1 }) // For orders by status
 orderSchema.index({ orderNumber: 1 }, { unique: true }) // Unique index on order number
 orderSchema.index({ user: 1, status: 1 }) // Compound index for user orders by status
 orderSchema.index({ createdAt: -1 }) // For recent orders
-orderSchema.index({ prescription: 1 })
 
 // Method to calculate total items
 orderSchema.methods.getTotalItems = function() {
@@ -155,14 +152,18 @@ orderSchema.methods.getTotalItems = function() {
 
 // Method to update status
 orderSchema.methods.updateStatus = async function(status, { changedBy, note } = {}) {
-  if (!orderStatuses.includes(status)) {
+  const normalized = orderStatuses.find(
+    (value) => value.toLowerCase() === String(status).toLowerCase()
+  )
+
+  if (!normalized) {
     throw new Error(`Invalid order status: ${status}`)
   }
 
-  this.status = status
+  this.status = normalized
 
   const historyEntry = {
-    status,
+    status: normalized,
     changedBy,
     note
   }
@@ -174,7 +175,8 @@ orderSchema.methods.updateStatus = async function(status, { changedBy, note } = 
 
 // Method to cancel order
 orderSchema.methods.cancelOrder = function(reason) {
-  if (['pending', 'confirmed'].includes(this.status)) {
+  const cancellableStatuses = ['processing', 'out for delivery']
+  if (cancellableStatuses.includes(this.status)) {
     this.status = 'cancelled'
     this.notes = reason ? `Cancelled: ${reason}` : 'Order cancelled'
     return this.save()
@@ -186,7 +188,7 @@ orderSchema.pre('save', function(next) {
   if (this.isNew) {
     if (!Array.isArray(this.statusHistory) || this.statusHistory.length === 0) {
       this.statusHistory = [{
-        status: this.status || 'pending',
+        status: this.status || 'processing',
         changedAt: this.createdAt || new Date()
       }]
     }

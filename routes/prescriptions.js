@@ -1,45 +1,14 @@
 import express from 'express'
 import multer from 'multer'
-import path from 'path'
-import fs from 'fs'
 import { body, validationResult } from 'express-validator'
 import Prescription from '../models/Prescription.js'
 import { auth } from '../middleware/auth.js'
-import { uploadToCloudinary } from '../src/utils/cloudinary.js'
+import { storePrescriptionFile } from '../src/utils/prescriptionStorage.js'
 
 const router = express.Router()
 
-const runningOnVercel = Boolean(process.env.VERCEL)
-
-const isCloudinaryConfigured = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-)
-
-let storage
-
-if (isCloudinaryConfigured) {
-  storage = multer.memoryStorage()
-} else {
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'prescriptions')
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true })
-  }
-
-  storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadsDir)
-    },
-    filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
-    }
-  })
-}
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
@@ -115,47 +84,23 @@ router.post('/', auth, upload.single('prescription'), [
 
     const { description, doctorName, patientName, prescriptionDate } = req.body
 
-    if (runningOnVercel && !isCloudinaryConfigured) {
-      console.error('Prescription upload attempted on Vercel without Cloudinary configuration.')
+    let fileMetadata
+    try {
+      fileMetadata = await storePrescriptionFile(req.file)
+    } catch (storageError) {
+      console.error('Prescription upload error:', storageError)
       return res.status(500).json({
         success: false,
-        message: 'Prescription upload requires cloud storage. Please configure Cloudinary environment variables.'
+        message: storageError.message || 'Failed to upload prescription file'
       })
-    }
-
-    let fileUrl = ''
-    let fileName = ''
-    let cloudinaryPublicId = undefined
-
-    if (isCloudinaryConfigured) {
-      try {
-        const uploadResult = await uploadToCloudinary(req.file.buffer, {
-          folder: 'prescriptions',
-          resource_type: 'auto',
-          public_id: `prescription_${Date.now()}_${Math.round(Math.random() * 1E9)}`
-        })
-
-        fileUrl = uploadResult.secure_url || uploadResult.url
-        fileName = uploadResult.public_id || req.file.originalname
-        cloudinaryPublicId = uploadResult.public_id
-      } catch (cloudError) {
-        console.error('Prescription Cloudinary upload error:', cloudError)
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to upload prescription file'
-        })
-      }
-    } else {
-      fileUrl = `/uploads/prescriptions/${req.file.filename}`
-      fileName = req.file.filename
     }
 
     const prescription = new Prescription({
       user: req.user._id,
-      fileName,
+      fileName: fileMetadata.fileName,
       originalName: req.file.originalname,
-      fileUrl,
-      cloudinaryPublicId,
+      fileUrl: fileMetadata.url,
+      cloudinaryPublicId: fileMetadata.publicId,
       fileType: req.file.mimetype,
       fileSize: req.file.size,
       description,
