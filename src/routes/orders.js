@@ -1,169 +1,80 @@
 import express from 'express'
-import { body, validationResult } from 'express-validator'
+import { body } from 'express-validator'
 import { auth } from '../middleware/auth.js'
-import Order from '../../models/Order.js'
-import Cart from '../../models/Cart.js'
-import Product from '../../models/Product.js'
+import {
+  checkoutSelectedItems,
+  getOrderById,
+  getUserOrders
+} from '../controllers/orderController.js'
 
 const router = express.Router()
 
-/**
- * POST /orders
- * Create order from cart
- */
-router.post('/', auth, [
-  body('shippingAddress.name').notEmpty().withMessage('Name is required'),
-  body('shippingAddress.phone').isMobilePhone('en-IN', { strictMode: false }).withMessage('Valid phone number is required'),
-  body('shippingAddress.street').notEmpty().withMessage('Street address is required'),
-  body('shippingAddress.city').notEmpty().withMessage('City is required'),
-  body('shippingAddress.state').notEmpty().withMessage('State is required'),
+const checkoutValidators = [
+  body('shippingAddress').isObject().withMessage('shippingAddress is required'),
+  body('shippingAddress.name').trim().notEmpty().withMessage('Name is required'),
+  body('shippingAddress.city').trim().notEmpty().withMessage('City is required'),
+  body('shippingAddress.state').trim().notEmpty().withMessage('State is required'),
   body('shippingAddress.pincode').isPostalCode('IN').withMessage('Valid pincode is required'),
-  body('paymentMethod').isIn(['COD', 'ONLINE', 'WALLET']).withMessage('Invalid payment method')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      })
+  body('shippingAddress.phone')
+    .optional({ checkFalsy: true })
+    .isMobilePhone('en-IN', { strictMode: false })
+    .withMessage('Valid phone number is required'),
+  body('shippingAddress.phoneNumber')
+    .optional({ checkFalsy: true })
+    .isMobilePhone('en-IN', { strictMode: false })
+    .withMessage('Valid phone number is required'),
+  body('shippingAddress').custom((address) => {
+    const phone = address?.phone || address?.phoneNumber
+    if (!phone) {
+      throw new Error('Phone number is required')
     }
 
-    const { shippingAddress, paymentMethod } = req.body
-
-    // Get user's cart
-    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product')
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cart is empty'
-      })
+    const street = address?.street || address?.address
+    if (!street || !String(street).trim()) {
+      throw new Error('Street address is required')
     }
 
-    // Validate stock availability
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id)
-      if (!product || !product.isActive) {
-        return res.status(400).json({
-          success: false,
-          message: `Product ${item.product.name} is no longer available`
-        })
-      }
-      if (product.stock < item.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${item.product.name}`
-        })
-      }
+    return true
+  }),
+  body('paymentMethod').isIn(['COD', 'ONLINE', 'WALLET']).withMessage('Invalid payment method'),
+  body('selectedItems').isArray({ min: 1 }).withMessage('selectedItems must include at least one entry'),
+  body('selectedItems.*.cartItemId').optional().isMongoId().withMessage('cartItemId must be a valid identifier'),
+  body('selectedItems.*.productId').optional().isMongoId().withMessage('productId must be a valid identifier'),
+  body('selectedItems.*.quantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('quantity must be at least 1'),
+  body('selectedItems.*').custom((item) => {
+    if (!item.cartItemId && !item.productId) {
+      throw new Error('Provide either cartItemId or productId for each selected item')
     }
+    return true
+  })
+]
 
-    // Calculate totals
-    cart.calculateTotals()
-
-    // Create order items
-    const orderItems = cart.items.map(item => ({
-      productId: item.product._id,
-      qty: item.quantity,
-      price: item.price,
-      name: item.product.name,
-      sku: item.product.sku || 'N/A'
-    }))
-
-    // Create order
-    const order = new Order({
-      user: req.user._id,
-      items: orderItems,
-      total: cart.total,
-      address: shippingAddress,
-      paymentMethod,
-      paymentStatus: 'PENDING',
-      status: 'PENDING'
-    })
-
-    await order.save()
-
-    // Reduce product stock
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id)
-      product.reduceStock(item.quantity)
-      await product.save()
-    }
-
-    // Clear cart
-    cart.clearCart()
-    await cart.save()
-
-    // For mocked payment, automatically mark as placed
-    order.status = 'CONFIRMED'
-    order.paymentStatus = 'PAID'
-    res.status(201).json({
-      success: true,
-      message: 'Order placed successfully',
-      data: {
-        orderId: order._id,
-        orderNumber: order.orderNumber,
-        status: 'PLACED',
-        total: order.total,
-        items: order.items,
-        address: order.address,
-        paymentMethod: order.paymentMethod
-      }
-    })
-
-  } catch (error) {
-    console.error('Create order error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create order'
-    })
-  }
-})
+/**
+ * POST /orders or /orders/checkout
+ * Selective checkout - turns only chosen cart items into an order.
+ */
+router.post(['/checkout', '/'], auth, checkoutValidators, checkoutSelectedItems)
 
 /**
  * GET /orders
- * Get user's orders with pagination
+ * Fetch all orders for the signed-in user.
  */
-router.get('/', auth, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1
-    const limit = parseInt(req.query.limit) || 20
-    const skip = (page - 1) * limit
+router.get('/', auth, getUserOrders)
 
-    const orders = await Order.find({ user: req.user._id })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .select('-__v')
-      .lean() // Use lean for better performance
+/**
+ * GET /orders/my-orders
+ * Alias for fetching the user's orders (kept for backward compatibility).
+ */
+router.get('/my-orders', auth, getUserOrders)
 
-    const total = await Order.countDocuments({ user: req.user._id })
-
-    res.json({
-      success: true,
-      data: orders,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    })
-  } catch (error) {
-    console.error('Get orders error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch orders'
-    })
-  }
-})
+/**
+ * GET /orders/:id
+ * Return a single order that belongs to the user.
+ */
+router.get('/:id', auth, getOrderById)
 
 export default router
-
-
-
-
-
-
-
 
