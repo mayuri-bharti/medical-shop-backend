@@ -48,7 +48,7 @@ router.post('/', auth, upload.single('prescription'), async (req, res) => {
       fileType: req.file.mimetype,
       fileSize: req.file.size,
       description: req.body.description || 'Uploaded prescription',
-      status: 'pending'
+      status: 'submitted'
     })
 
     await prescription.save()
@@ -59,7 +59,9 @@ router.post('/', auth, upload.single('prescription'), async (req, res) => {
       data: {
         processingId,
         prescriptionId: prescription._id,
-        status: 'pending'
+        _id: prescription._id,
+        status: prescription.status || 'submitted',
+        fileUrl: prescription.fileUrl
       }
     })
   } catch (error) {

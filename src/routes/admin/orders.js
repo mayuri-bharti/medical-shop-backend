@@ -7,21 +7,19 @@ import Prescription from '../../../models/Prescription.js'
 const router = express.Router()
 
 const orderStatuses = [
-  'pending',
-  'confirmed',
+  
+  
   'processing',
-  'shipped',
+  'out for delivery',
   'delivered',
   'cancelled'
 ]
 
 const orderToPrescriptionStatusMap = {
-  pending: 'ordered',
-  confirmed: 'ordered',
-  processing: 'fulfilled',
-  shipped: 'fulfilled',
-  delivered: 'delivered',
-  cancelled: 'cancelled'
+  'processing': 'ordered',
+  'out for delivery': 'fulfilled',
+  'delivered': 'delivered',
+  'cancelled': 'cancelled'
 }
 
 router.get('/', verifyAdminToken, async (req, res) => {
@@ -34,6 +32,7 @@ router.get('/', verifyAdminToken, async (req, res) => {
 
     if (req.query.status && req.query.status !== 'all') {
       const status = req.query.status.toLowerCase()
+      // Accept the status as-is since we're using Order model statuses directly
       if (orderStatuses.includes(status)) {
         filter.status = status
       }

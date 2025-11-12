@@ -49,7 +49,8 @@ const checkoutValidators = [
       throw new Error('Provide either cartItemId or productId for each selected item')
     }
     return true
-  })
+  }),
+  body('prescriptionId').optional().isMongoId().withMessage('prescriptionId must be a valid MongoDB ID')
 ]
 
 /**

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import Admin from '../../models/Admin.js'
+import User from '../../models/User.js'
 
 /**
  * Admin authentication middleware to verify JWT token
@@ -37,13 +38,30 @@ export const verifyAdminToken = async (req, res, next) => {
       })
     }
     
-    // Fetch admin from database
-    const admin = await Admin.findById(decoded.userId)
+    // Try to find admin in Admin model first
+    let admin = await Admin.findById(decoded.userId)
     
-    if (!admin || !admin.isAdmin) {
+    // If not found in Admin model, check User model
+    if (!admin) {
+      const user = await User.findById(decoded.userId)
+      if (user && user.role === 'ADMIN') {
+        admin = user
+      }
+    }
+    
+    // Check if admin exists and is valid
+    if (!admin) {
       return res.status(401).json({ 
         success: false,
         message: 'Invalid token. Admin not found.' 
+      })
+    }
+    
+    // For Admin model, check isAdmin field (if it exists)
+    if (admin.isAdmin !== undefined && !admin.isAdmin) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid token. Admin privileges not granted.' 
       })
     }
 
@@ -69,9 +87,14 @@ export const verifyAdminToken = async (req, res, next) => {
       })
     }
     
-    res.status(500).json({ success: false, message: 'Authentication error.' })
+    res.status(500).json({ 
+      success: false, 
+      message: 'Authentication error.' 
+    })
   }
 }
+
+
 
 
 

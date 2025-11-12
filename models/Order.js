@@ -107,6 +107,10 @@ const orderSchema = new mongoose.Schema({
     default: null
   },
   prescriptionPublicId: String,
+  prescription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Prescription'
+  },
   paymentMethod: {
     type: String,
     enum: ['COD', 'ONLINE', 'WALLET'],

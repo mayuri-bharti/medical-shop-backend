@@ -22,6 +22,7 @@ import adminProductRoutes from './src/routes/admin/products.js'
 import adminUserRoutes from './src/routes/admin/users.js'
 import adminOrderRoutes from './src/routes/admin/orders.js'
 import adminPrescriptionRoutes from './src/routes/admin/prescriptions.js'
+import adminDashboardRoutes from './src/routes/admin/dashboard.js'
 import profileRoutes from './routes/profile.js'
 dotenv.config()
 
@@ -277,6 +278,7 @@ app.use('/api/admin/products', adminProductRoutes)
 app.use('/api/admin/users', adminUserRoutes)
 app.use('/api/admin/orders', adminOrderRoutes)
 app.use('/api/admin/prescriptions', adminPrescriptionRoutes)
+app.use('/api/admin/dashboard', adminDashboardRoutes)
 
 // Default route
 app.get('/', (req, res) => {

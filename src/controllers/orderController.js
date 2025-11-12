@@ -2,6 +2,7 @@ import { validationResult } from 'express-validator'
 import Cart from '../../models/Cart.js'
 import Order from '../../models/Order.js'
 import Product from '../../models/Product.js'
+import Prescription from '../../models/Prescription.js'
 
 const DELIVERY_FEE = 50
 const FREE_DELIVERY_THRESHOLD = 499
@@ -211,13 +212,24 @@ export const checkoutSelectedItems = async (req, res) => {
       })
     }
 
-    const { shippingAddress, paymentMethod, selectedItems } = req.body
+    const { shippingAddress, paymentMethod, selectedItems, prescriptionId } = req.body
     const normalizedAddress = normalizeShippingAddress(shippingAddress)
 
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product')
 
     if (!cart || cart.items.length === 0) {
       throw new CheckoutError('Your cart is empty', 'CART_EMPTY')
+    }
+
+    // Validate prescription if provided
+    if (prescriptionId) {
+      const prescription = await Prescription.findById(prescriptionId)
+      if (!prescription) {
+        throw new CheckoutError('Prescription not found', 'PRESCRIPTION_NOT_FOUND')
+      }
+      if (prescription.user.toString() !== req.user._id.toString()) {
+        throw new CheckoutError('Prescription does not belong to user', 'PRESCRIPTION_UNAUTHORIZED')
+      }
     }
 
     const resolvedItems = await resolveSelectedCartItems(cart, selectedItems)
@@ -241,10 +253,30 @@ export const checkoutSelectedItems = async (req, res) => {
       shippingAddress: normalizedAddress,
       paymentMethod: paymentMethod?.toUpperCase?.() || 'COD',
       paymentStatus: 'pending',
-      status: 'processing'
+      status: 'processing',
+      prescription: prescriptionId || undefined
     })
 
     await order.save()
+
+    // Link prescription to order if provided
+    if (prescriptionId) {
+      try {
+        const prescription = await Prescription.findById(prescriptionId)
+        if (prescription) {
+          prescription.order = order._id
+          await prescription.recordStatusChange({
+            status: 'ordered',
+            changedBy: req.user._id,
+            note: 'Order created from prescription'
+          })
+          await prescription.save()
+        }
+      } catch (prescriptionError) {
+        console.error('Error linking prescription to order:', prescriptionError)
+        // Don't fail the order if prescription linking fails
+      }
+    }
 
     // Reduce inventory only for items that were actually purchased.
     for (const { product, quantity } of resolvedItems) {
@@ -256,6 +288,9 @@ export const checkoutSelectedItems = async (req, res) => {
     await updateCartAfterCheckout(cart, resolvedItems)
 
     await order.populate('items.product')
+    if (order.prescription) {
+      await order.populate('prescription')
+    }
 
     res.status(201).json({
       success: true,
@@ -325,6 +360,8 @@ export const getOrderById = async (req, res) => {
     })
   }
 }
+
+
 
 
 
