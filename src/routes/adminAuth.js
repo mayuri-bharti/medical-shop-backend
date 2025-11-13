@@ -6,6 +6,7 @@ import Otp from '../../models/Otp.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { sendOtpSms } from '../services/otpProvider.js'
+import { verifyAdminToken } from '../middleware/adminAuth.js'
 
 const router = express.Router()
 
@@ -267,6 +268,253 @@ router.post('/verify-otp', [
     res.status(500).json({ 
       success: false,
       message: error.message || 'Failed to verify OTP'
+    })
+  }
+})
+
+/**
+ * Login admin with password (phone/email/username + password)
+ * POST /api/admin/auth/login-password
+ */
+router.post('/login-password', [
+  body('identifier')
+    .notEmpty()
+    .withMessage('Please provide phone, email, username, or name')
+    .trim(),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { identifier, password } = req.body
+
+    // Find admin by phone, email, username, or name
+    const admin = await Admin.findOne({
+      $or: [
+        { phone: identifier },
+        { email: identifier.toLowerCase() },
+        { username: identifier.toLowerCase() },
+        { name: identifier }
+      ],
+      isAdmin: true
+    }).select('+password') // Include password field
+
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      })
+    }
+
+    // Check if admin has password set
+    if (!admin.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password not set. Please use OTP login or set a password first.'
+      })
+    }
+
+    // Verify password
+    const isPasswordValid = await admin.comparePassword(password)
+    
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      })
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: admin._id,
+        role: 'ADMIN',
+        phone: admin.phone
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+
+    console.log(`✅ Admin password login successful for ${identifier}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Admin login successful',
+      data: {
+        accessToken: token,
+        admin: {
+          id: admin._id,
+          name: admin.name,
+          phone: admin.phone,
+          email: admin.email
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Admin password login error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to login'
+    })
+  }
+})
+
+/**
+ * POST /admin/auth/set-password
+ * Set or update admin password
+ * Protected route - requires admin authentication
+ */
+router.post('/set-password', verifyAdminToken, [
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match')
+      }
+      return true
+    })
+], async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { password } = req.body
+
+    // Get admin from database (use adminId from middleware)
+    const admin = await Admin.findById(req.adminId || req.admin._id).select('+password')
+    
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      })
+    }
+
+    // Set password (will be hashed by mongoose pre-save hook)
+    admin.password = password
+    await admin.save()
+
+    console.log(`✅ Password set successfully for admin ${admin.phone}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Password set successfully'
+    })
+  } catch (error) {
+    console.error('Set admin password error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to set password'
+    })
+  }
+})
+
+/**
+ * POST /admin/auth/change-password
+ * Change admin password (requires old password)
+ * Protected route - requires admin authentication
+ */
+router.post('/change-password', verifyAdminToken, [
+  body('oldPassword')
+    .notEmpty()
+    .withMessage('Old password is required'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('New password must be at least 6 characters'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.newPassword) {
+        throw new Error('Passwords do not match')
+      }
+      return true
+    })
+], async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { oldPassword, newPassword } = req.body
+
+    // Get admin from database with password (use adminId from middleware)
+    const admin = await Admin.findById(req.adminId || req.admin._id).select('+password')
+    
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      })
+    }
+
+    // Check if admin has password set
+    if (!admin.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'No password set. Please use set-password endpoint instead.'
+      })
+    }
+
+    // Verify old password
+    const isOldPasswordValid = await admin.comparePassword(oldPassword)
+    
+    if (!isOldPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid old password'
+      })
+    }
+
+    // Set new password (will be hashed by mongoose pre-save hook)
+    admin.password = newPassword
+    await admin.save()
+
+    console.log(`✅ Password changed successfully for admin ${admin.phone}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully'
+    })
+  } catch (error) {
+    console.error('Change admin password error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to change password'
     })
   }
 })

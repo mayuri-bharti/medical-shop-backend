@@ -1,10 +1,12 @@
 import jwt from 'jsonwebtoken'
 import Admin from '../../models/Admin.js'
-import User from '../../models/User.js'
+// REMOVED: import User from '../../models/User.js' - Users cannot access admin routes
 
 /**
  * Admin authentication middleware to verify JWT token
- * Only allows admins to access protected routes
+ * SECURITY: Only allows admins from Admin model to access protected routes
+ * Users from User model CANNOT access admin routes, even if they have ADMIN role in token
+ * Only admins registered in the Admin collection with isAdmin: true can access
  */
 export const verifyAdminToken = async (req, res, next) => {
   try {
@@ -38,26 +40,20 @@ export const verifyAdminToken = async (req, res, next) => {
       })
     }
     
-    // Try to find admin in Admin model first
-    let admin = await Admin.findById(decoded.userId)
+    // SECURITY FIX: ONLY check Admin model - do NOT check User model
+    // This ensures that only admins registered in the Admin collection can access admin routes
+    // Users from the User collection cannot access admin routes, even if they have ADMIN role
+    const admin = await Admin.findById(decoded.userId)
     
-    // If not found in Admin model, check User model
-    if (!admin) {
-      const user = await User.findById(decoded.userId)
-      if (user && user.role === 'ADMIN') {
-        admin = user
-      }
-    }
-    
-    // Check if admin exists and is valid
+    // Check if admin exists in Admin collection
     if (!admin) {
       return res.status(401).json({ 
         success: false,
-        message: 'Invalid token. Admin not found.' 
+        message: 'Invalid token. Admin not found. Only registered admins can access this route.' 
       })
     }
     
-    // For Admin model, check isAdmin field (if it exists)
+    // Check isAdmin field - must be true
     if (admin.isAdmin !== undefined && !admin.isAdmin) {
       return res.status(401).json({ 
         success: false,

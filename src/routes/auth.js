@@ -1,6 +1,7 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs'
 import User from '../../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { sendOtpSms } from '../services/otpProvider.js'
@@ -292,6 +293,258 @@ router.post('/verify-otp', checkRateLimit, [
 })
 
 /**
+ * Register new user with email/phone/name and password
+ * POST /api/auth/register
+ */
+router.post('/register', [
+  body('phone')
+    .optional()
+    .isMobilePhone('en-IN', { strictMode: false })
+    .withMessage('Please provide a valid Indian phone number')
+    .trim(),
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2 })
+    .withMessage('Name must be at least 2 characters'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match')
+      }
+      return true
+    })
+], async (req, res) => {
+  try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { phone, email, name, password, confirmPassword } = req.body
+
+    // At least one identifier must be provided
+    if (!phone && !email && !name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide at least one of: phone, email, or name'
+      })
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        ...(phone ? [{ phone }] : []),
+        ...(email ? [{ email: email.toLowerCase() }] : []),
+        ...(name ? [{ name }] : [])
+      ]
+    })
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'User already exists. Please login instead.'
+      })
+    }
+
+    // Create new user
+    const user = new User({
+      phone: phone || undefined,
+      email: email ? email.toLowerCase() : undefined,
+      name: name || undefined,
+      password: password,
+      role: 'USER',
+      isVerified: true
+    })
+
+    await user.save()
+
+    console.log(`✅ New user registered: ${phone || email || name}`)
+
+    // Generate tokens
+    const tokens = createTokens(user)
+
+    // Set refresh token as secure HttpOnly cookie (if FRONTEND_BASE_URL is set)
+    if (process.env.FRONTEND_BASE_URL) {
+      res.cookie('refreshToken', tokens.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      })
+    }
+
+    // Return access token and user info
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          role: user.role
+        },
+        accessToken: tokens.accessToken,
+        ...(process.env.FRONTEND_BASE_URL ? {} : { refreshToken: tokens.refreshToken })
+      }
+    })
+  } catch (error) {
+    console.error('Registration error:', error.message)
+    
+    // Handle duplicate key error
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0]
+      return res.status(409).json({
+        success: false,
+        message: `User already exists with this ${field}. Please login instead.`
+      })
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to register'
+    })
+  }
+})
+
+/**
+ * Login with password (email/phone/username + password)
+ * POST /api/auth/login-password
+ */
+router.post('/login-password', [
+  body('identifier')
+    .notEmpty()
+    .withMessage('Please provide phone, email, or username')
+    .trim(),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { identifier, password } = req.body
+
+    // Find user by phone, email, or name (username)
+    const user = await User.findOne({
+      $or: [
+        { phone: identifier },
+        { email: identifier.toLowerCase() },
+        { name: identifier }
+      ]
+    }).select('+password') // Include password field
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found. Please register first or use OTP login.',
+        code: 'USER_NOT_FOUND'
+      })
+    }
+
+    // Check if user has password set
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password not set. Please use OTP login or set a password first.'
+      })
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password)
+    
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      })
+    }
+
+    // Generate tokens
+    const tokens = createTokens(user)
+
+    // Set refresh token as secure HttpOnly cookie (if FRONTEND_BASE_URL is set)
+    if (process.env.FRONTEND_BASE_URL) {
+      res.cookie('refreshToken', tokens.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      })
+    }
+
+    // Update user last login
+    user.isVerified = true
+    await user.save()
+
+    console.log(`✅ User password login successful for ${identifier}`)
+
+    // Return access token and user info
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          role: user.role
+        },
+        accessToken: tokens.accessToken,
+        ...(process.env.FRONTEND_BASE_URL ? {} : { refreshToken: tokens.refreshToken })
+      }
+    })
+  } catch (error) {
+    console.error('Password login error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to login'
+    })
+  }
+})
+
+/**
  * POST /auth/refresh-token
  * Refresh access token using refresh token
  * 
@@ -411,6 +664,149 @@ router.post('/logout', auth, async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Failed to logout' 
+    })
+  }
+})
+
+/**
+ * POST /auth/set-password
+ * Set or update user password
+ * 
+ * Status codes: 200 (success), 400 (validation), 401 (unauthorized), 500 (error)
+ */
+router.post('/set-password', auth, [
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match')
+      }
+      return true
+    })
+], async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { password } = req.body
+
+    // Get user from database
+    const user = await User.findById(req.user._id).select('+password')
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    // Set password (will be hashed by mongoose pre-save hook)
+    user.password = password
+    await user.save()
+
+    console.log(`✅ Password set successfully for user ${user.phone}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Password set successfully'
+    })
+  } catch (error) {
+    console.error('Set password error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to set password'
+    })
+  }
+})
+
+/**
+ * POST /auth/change-password
+ * Change user password (requires old password)
+ * 
+ * Status codes: 200 (success), 400 (validation), 401 (unauthorized/invalid old password), 500 (error)
+ */
+router.post('/change-password', auth, [
+  body('oldPassword')
+    .notEmpty()
+    .withMessage('Old password is required'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('New password must be at least 6 characters'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.newPassword) {
+        throw new Error('Passwords do not match')
+      }
+      return true
+    })
+], async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { oldPassword, newPassword } = req.body
+
+    // Get user from database with password
+    const user = await User.findById(req.user._id).select('+password')
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    // Check if user has password set
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'No password set. Please use set-password endpoint instead.'
+      })
+    }
+
+    // Verify old password
+    const isOldPasswordValid = await user.comparePassword(oldPassword)
+    
+    if (!isOldPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid old password'
+      })
+    }
+
+    // Set new password (will be hashed by mongoose pre-save hook)
+    user.password = newPassword
+    await user.save()
+
+    console.log(`✅ Password changed successfully for user ${user.phone}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully'
+    })
+  } catch (error) {
+    console.error('Change password error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Failed to change password'
     })
   }
 })
