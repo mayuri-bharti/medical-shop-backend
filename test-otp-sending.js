@@ -24,7 +24,7 @@ async function testOtpSending() {
   try {
     // Generate test OTP
     const testOtp = Math.floor(100000 + Math.random() * 900000).toString()
-    const message = `Your MediShop OTP is ${testOtp}. Valid for 5 minutes. Do not share with anyone.`
+    const message = `Your HealthPlus  OTP is ${testOtp}. Valid for 5 minutes. Do not share with anyone.`
     
     console.log(`🔢 Test OTP: ${testOtp}`)
     console.log(`📝 Message: ${message}`)

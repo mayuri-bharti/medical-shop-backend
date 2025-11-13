@@ -212,6 +212,15 @@ export const checkoutSelectedItems = async (req, res) => {
       })
     }
 
+    // Check if user is blocked - prevent blocked users from placing orders
+    if (req.user.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been blocked. You cannot place new orders. Please contact support for assistance.',
+        code: 'USER_BLOCKED'
+      })
+    }
+
     const { shippingAddress, paymentMethod, selectedItems, prescriptionId } = req.body
     const normalizedAddress = normalizeShippingAddress(shippingAddress)
 

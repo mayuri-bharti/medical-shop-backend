@@ -53,6 +53,14 @@ const projectOrder = (orderDoc) => {
 
 router.post('/', auth, upload.single('prescription'), async (req, res) => {
   try {
+    // Check if user is blocked - prevent blocked users from placing orders
+    if (req.user.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been blocked. You cannot place new orders. Please contact support for assistance.'
+      })
+    }
+
     const shippingAddress = parseJSONField(req.body.shippingAddress)
     if (!shippingAddress.phoneNumber && shippingAddress.phone) {
       shippingAddress.phoneNumber = shippingAddress.phone

@@ -16,7 +16,7 @@ const addAdmin = async () => {
     // Get phone number from command line arguments
     const phone = process.argv[2]
     const name = process.argv[3] || 'Admin User'
-    const email = process.argv[4] || `admin_${phone}@medishop.com`
+    const email = process.argv[4] || `admin_${phone}@HealthPlus.com`
 
     if (!phone) {
       console.error('❌ Error: Phone number is required')
