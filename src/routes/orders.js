@@ -4,7 +4,8 @@ import { auth } from '../middleware/auth.js'
 import {
   checkoutSelectedItems,
   getOrderById,
-  getUserOrders
+  getUserOrders,
+  getOrderTracking
 } from '../controllers/orderController.js'
 
 const router = express.Router()
@@ -70,6 +71,13 @@ router.get('/', auth, getUserOrders)
  * Alias for fetching the user's orders (kept for backward compatibility).
  */
 router.get('/my-orders', auth, getUserOrders)
+
+/**
+ * GET /orders/:id/tracking
+ * Return order with status history for tracking.
+ * IMPORTANT: This route must come before /:id to avoid route conflicts.
+ */
+router.get('/:id/tracking', auth, getOrderTracking)
 
 /**
  * GET /orders/:id

@@ -299,6 +299,38 @@ router.put('/:id/status', verifyAdminToken, [
   }
 })
 
+// IMPORTANT: More specific routes must come before generic /:id route
+router.get('/:id/tracking', auth, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      user: req.user._id
+    }).populate('items.product')
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      })
+    }
+
+    // Return order with status history for tracking
+    res.json({
+      success: true,
+      data: {
+        ...projectOrder(order),
+        statusHistory: order.statusHistory || []
+      }
+    })
+  } catch (error) {
+    console.error('Fetch order tracking error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch order tracking'
+    })
+  }
+})
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const order = await Order.findOne({
