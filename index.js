@@ -9,6 +9,7 @@ import compression from 'compression'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { existsSync } from 'fs'
 import { connectDB } from './src/db.js'
 import authRoutes from './src/routes/auth.js'
 import adminAuthRoutes from './src/routes/adminAuth.js'
@@ -136,15 +137,21 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// Serve static files from uploads directory (only in development)
-// On Vercel/production, use Cloudinary instead
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = dirname(__filename)
-  app.use('/uploads', express.static(join(__dirname, 'uploads')))
-  console.log('📁 Static file serving enabled for local development')
+// Serve static files from uploads directory
+// Always enable for local files, use Cloudinary in production/Vercel only
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const uploadsPath = join(__dirname, 'uploads')
+
+// Check if uploads directory exists and enable static serving
+if (existsSync(uploadsPath)) {
+  app.use('/uploads', express.static(uploadsPath))
+  console.log('📁 Static file serving enabled for uploads directory')
 } else {
-  console.log('☁️  Using Cloudinary for file storage (production mode)')
+  console.log('⚠️  Uploads directory not found, static file serving disabled')
+  if (!process.env.VERCEL) {
+    console.log('💡 Create uploads/prescriptions directory for local file storage')
+  }
 }
 
 // Performance monitoring middleware
@@ -270,7 +277,7 @@ console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
 app.use('/api/allmedecine', allMedicineRoutes)
 app.use('/api/search', searchRoutes)
-app.use('/api/prescriptions', auth, prescriptionRoutes)
+app.use('/api/prescriptions', prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
 app.use('/api/profile', auth, profileRoutes)

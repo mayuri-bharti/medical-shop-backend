@@ -49,7 +49,14 @@ export const uploadToCloudinary = async (file, options = {}) => {
         (error, result) => {
           if (error) {
             console.error('Cloudinary upload error:', error)
-            reject(error)
+            // Create a more descriptive error object
+            const errorDetails = {
+              message: error.message || error.error?.message || error.error || 'Unknown Cloudinary error',
+              http_code: error.http_code,
+              name: error.name || 'CloudinaryUploadError',
+              originalError: error
+            }
+            reject(new Error(errorDetails.message))
           } else {
             resolve(result)
           }
@@ -57,6 +64,17 @@ export const uploadToCloudinary = async (file, options = {}) => {
       )
 
       fileStream.pipe(uploadStream)
+      
+      // Handle stream errors
+      fileStream.on('error', (streamError) => {
+        console.error('File stream error:', streamError)
+        reject(new Error(`File stream error: ${streamError.message || streamError.toString()}`))
+      })
+      
+      uploadStream.on('error', (uploadStreamError) => {
+        console.error('Upload stream error:', uploadStreamError)
+        reject(new Error(`Upload stream error: ${uploadStreamError.message || uploadStreamError.toString()}`))
+      })
     })
   } catch (error) {
     console.error('Cloudinary upload error:', error)
@@ -161,10 +179,15 @@ export default {
 }
 
 export const isCloudinaryConfigured = () => {
+  // Check that all required env vars exist AND are non-empty strings
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+  
   return Boolean(
-    process.env.CLOUDINARY_CLOUD_NAME &&
-    process.env.CLOUDINARY_API_KEY &&
-    process.env.CLOUDINARY_API_SECRET
+    cloudName && cloudName.trim() !== '' &&
+    apiKey && apiKey.trim() !== '' &&
+    apiSecret && apiSecret.trim() !== ''
   )
 }
 
