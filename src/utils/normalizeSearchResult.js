@@ -142,6 +142,7 @@ export const normalizeSearchResult = (doc, source) => {
   const price = toSafeNumber(
     doc.price ??
     doc.mrp ??
+    doc['price(₹)'] ??
     doc.selling_price ??
     doc.sale_price ??
     doc.discounted_price

@@ -2,6 +2,7 @@ import express from 'express'
 import { body, validationResult } from 'express-validator'
 import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import Product from '../../../models/Product.js'
+import { clearCache } from '../../middleware/cache.js'
 
 const router = express.Router()
 
@@ -83,6 +84,16 @@ router.post('/', verifyAdminToken, [
   ]).withMessage('Invalid category')
 ], async (req, res) => {
   try {
+    // Check database connection
+    const mongoose = await import('mongoose')
+    if (mongoose.default.connection.readyState !== 1) {
+      console.error('❌ Database not connected!')
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection unavailable. Please try again.'
+      })
+    }
+    
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -92,8 +103,63 @@ router.post('/', verifyAdminToken, [
       })
     }
 
-    const product = new Product(req.body)
-    await product.save()
+    // Ensure isActive is set to true for new products
+    const productData = {
+      ...req.body,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    }
+    
+    console.log('📦 Creating product with data:', {
+      name: productData.name,
+      brand: productData.brand,
+      sku: productData.sku,
+      category: productData.category,
+      isActive: productData.isActive,
+      price: productData.price,
+      mrp: productData.mrp,
+      stock: productData.stock
+    })
+    
+    // Check if SKU already exists
+    const existingProduct = await Product.findOne({ sku: productData.sku })
+    if (existingProduct) {
+      console.warn('⚠️  Product with SKU already exists:', productData.sku)
+      return res.status(400).json({
+        success: false,
+        message: 'Product with this SKU already exists',
+        existingProduct: {
+          id: existingProduct._id,
+          name: existingProduct.name,
+          sku: existingProduct.sku
+        }
+      })
+    }
+    
+    const product = new Product(productData)
+    const savedProduct = await product.save()
+    
+    // Verify product was saved by querying it back
+    const verifiedProduct = await Product.findById(savedProduct._id)
+    if (!verifiedProduct) {
+      console.error('❌ Product save verification failed!')
+      return res.status(500).json({
+        success: false,
+        message: 'Product was not saved to database. Please try again.'
+      })
+    }
+    
+    console.log('✅ Product saved to database:', {
+      id: verifiedProduct._id,
+      name: verifiedProduct.name,
+      sku: verifiedProduct.sku,
+      isActive: verifiedProduct.isActive,
+      category: verifiedProduct.category
+    })
+
+    // Clear products cache so new product appears immediately
+    await clearCache('cache:/api/products*').catch(err => {
+      console.warn('Failed to clear cache:', err.message)
+    })
 
     res.status(201).json({
       success: true,

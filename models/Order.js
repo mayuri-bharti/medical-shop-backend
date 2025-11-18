@@ -1,9 +1,18 @@
 import mongoose from 'mongoose'
 
 const orderItemSchema = new mongoose.Schema({
+  itemType: {
+    type: String,
+    enum: ['product', 'medicine'],
+    default: 'product'
+  },
   product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product'
+  },
+  medicine: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AllMedicine'
   },
   quantity: {
     type: Number,

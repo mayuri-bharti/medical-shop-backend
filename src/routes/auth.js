@@ -2,6 +2,7 @@ import express from 'express'
 import { body, validationResult } from 'express-validator'
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'
+import { OAuth2Client } from 'google-auth-library'
 import User from '../../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { sendOtpSms } from '../services/otpProvider.js'
@@ -550,6 +551,234 @@ router.post('/login-password', [
  * 
  * Status codes: 200 (success), 400 (validation), 401 (invalid token), 500 (error)
  */
+/**
+ * Login with Google OAuth
+ * POST /api/auth/google
+ * 
+ * Accepts Google JWT credential token, verifies it using google-auth-library,
+ * and creates/logs in user
+ */
+router.post('/google', [
+  body('credential')
+    .notEmpty()
+    .withMessage('Google credential token is required')
+], async (req, res) => {
+  try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { credential } = req.body
+    
+    if (!credential || typeof credential !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Google credential token is required'
+      })
+    }
+
+    // Validate credential format (should be a JWT with 3 parts separated by dots)
+    const credentialParts = credential.split('.')
+    if (credentialParts.length !== 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Google credential token format. Expected JWT format.'
+      })
+    }
+
+    // Verify Google JWT token using google-auth-library
+    let googleUser
+    try {
+      const client = new OAuth2Client()
+      
+      // Build verification options
+      const verifyOptions = {
+        idToken: credential
+      }
+      
+      // Only add audience if GOOGLE_CLIENT_ID is set
+      // This allows verification without strict audience checking
+      if (process.env.GOOGLE_CLIENT_ID) {
+        verifyOptions.audience = process.env.GOOGLE_CLIENT_ID
+      } else {
+        console.warn('⚠️  GOOGLE_CLIENT_ID not set in environment. Token verification will proceed without audience check.')
+      }
+      
+      const ticket = await client.verifyIdToken(verifyOptions)
+      const payload = ticket.getPayload()
+      
+      if (!payload) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid Google credential token - no payload received'
+        })
+      }
+
+      // Validate required fields
+      if (!payload.email && !payload.sub) {
+        return res.status(400).json({
+          success: false,
+          message: 'Google token missing required information (email or sub)'
+        })
+      }
+
+      googleUser = {
+        email: payload.email,
+        name: payload.name || payload.given_name || undefined,
+        picture: payload.picture,
+        emailVerified: payload.email_verified || false,
+        sub: payload.sub
+      }
+    } catch (err) {
+      // Log full error for debugging
+      console.error('❌ Google token verification error:', {
+        message: err.message,
+        code: err.code,
+        name: err.name,
+        type: err.constructor.name,
+        fullError: err.toString()
+      })
+      
+      // Log credential info (first 50 chars only for security)
+      console.log('📝 Credential received (first 50 chars):', credential.substring(0, 50) + '...')
+      console.log('📝 Credential length:', credential.length)
+      console.log('📝 GOOGLE_CLIENT_ID set:', !!process.env.GOOGLE_CLIENT_ID)
+      
+      // Handle expired token specifically
+      if (err.message && (err.message.includes('expired') || err.message.includes('Expired') || err.message.includes('used too late') || err.code === 'auth/id-token-expired')) {
+        return res.status(401).json({
+          success: false,
+          message: 'TOKEN_EXPIRED',
+          error: 'Google credential token has expired. Please try logging in again.',
+          hint: 'The token expired before reaching the server. Please click the Google login button again to get a fresh token.'
+        })
+      }
+      
+      // Handle audience mismatch
+      if (err.message && (err.message.includes('audience') || err.message.includes('Audience'))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Token audience mismatch. Please check GOOGLE_CLIENT_ID configuration.',
+          error: err.message,
+          hint: 'Ensure GOOGLE_CLIENT_ID in backend .env matches VITE_GOOGLE_CLIENT_ID in frontend .env'
+        })
+      }
+      
+      // Handle invalid token format
+      if (err.message && (err.message.includes('Invalid token') || err.message.includes('malformed'))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid Google credential token format',
+          error: err.message
+        })
+      }
+      
+      // Handle other verification errors
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to verify Google credential token',
+        error: err.message || 'Unknown verification error',
+        errorCode: err.code,
+        errorName: err.name,
+        details: process.env.NODE_ENV === 'development' ? {
+          message: err.message,
+          code: err.code,
+          name: err.name
+        } : undefined
+      })
+    }
+
+    if (!googleUser.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google account email is required'
+      })
+    }
+
+    // Find or create user
+    let user = await User.findOne({ 
+      $or: [
+        { email: googleUser.email.toLowerCase() },
+        { googleId: googleUser.sub }
+      ]
+    })
+
+    if (!user) {
+      // Create new user
+      user = new User({
+        email: googleUser.email.toLowerCase(),
+        name: googleUser.name || undefined,
+        googleId: googleUser.sub,
+        isVerified: googleUser.emailVerified,
+        role: 'USER'
+      })
+      await user.save()
+    } else {
+      // Update existing user with Google ID if not set
+      if (!user.googleId) {
+        user.googleId = googleUser.sub
+      }
+      // Update verification status if email is verified
+      if (googleUser.emailVerified) {
+        user.isVerified = true
+      }
+      await user.save()
+    }
+
+    // Generate tokens
+    const tokens = createTokens(user)
+
+    // Set refresh token as secure HttpOnly cookie (if FRONTEND_BASE_URL is set)
+    if (process.env.FRONTEND_BASE_URL) {
+      res.cookie('refreshToken', tokens.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      })
+    }
+
+    // Return access token and user info
+    res.status(200).json({
+      success: true,
+      message: 'Google login successful',
+      data: {
+        user: {
+          _id: user._id,
+          phone: user.phone,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified
+        },
+        accessToken: tokens.accessToken,
+        ...(process.env.FRONTEND_BASE_URL ? {} : { refreshToken: tokens.refreshToken })
+      }
+    })
+  } catch (error) {
+    console.error('Google login error:', error.message)
+    res.status(500).json({
+      success: false,
+      message: 'Google login failed',
+      error: error.message
+    })
+  }
+})
+
 router.post('/refresh-token', [
   body('refreshToken')
     .notEmpty()

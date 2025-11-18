@@ -4,11 +4,54 @@ import { body, validationResult } from 'express-validator'
 import Order from '../models/Order.js'
 import Cart from '../models/Cart.js'
 import Product from '../models/Product.js'
+import User from '../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { verifyAdminToken } from '../middleware/adminAuth.js'
 import { storePrescriptionFile } from '../src/utils/prescriptionStorage.js'
 
 const router = express.Router()
+
+const normalizeAddressField = (value) => {
+  if (typeof value === 'number') {
+    return String(value)
+  }
+  if (typeof value !== 'string') {
+    return ''
+  }
+  return value.trim()
+}
+
+const normalizeShippingAddress = (address = {}) => {
+  const name = normalizeAddressField(address.name || address.fullName)
+  const phoneNumber = normalizeAddressField(address.phoneNumber || address.phone)
+  const street = normalizeAddressField(address.address || address.street || address.line1)
+  const city = normalizeAddressField(address.city)
+  const state = normalizeAddressField(address.state)
+  const pincode = normalizeAddressField(address.pincode || address.zip || address.postalCode)
+  const landmark = normalizeAddressField(address.landmark || address.area)
+
+  return {
+    name,
+    phoneNumber,
+    address: street,
+    city,
+    state,
+    pincode,
+    landmark
+  }
+}
+
+const buildAddressKey = (address) => {
+  return [
+    address.name,
+    address.phoneNumber,
+    address.address,
+    address.city,
+    address.state,
+    address.pincode,
+    address.landmark
+  ].map((part) => part?.toLowerCase?.().trim?.() || '').join('|')
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -61,10 +104,28 @@ router.post('/', auth, upload.single('prescription'), async (req, res) => {
       })
     }
 
-    const shippingAddress = parseJSONField(req.body.shippingAddress)
-    if (!shippingAddress.phoneNumber && shippingAddress.phone) {
-      shippingAddress.phoneNumber = shippingAddress.phone
+    let shippingAddress = parseJSONField(req.body.shippingAddress)
+    const addressId = req.body.addressId || req.body.shippingAddressId
+
+    if ((!shippingAddress || !shippingAddress.name) && addressId) {
+      const savedAddress = req.user.addresses?.id(addressId)
+      if (!savedAddress) {
+        return res.status(404).json({
+          success: false,
+          message: 'Saved address not found. Please re-select or add a new address.'
+        })
+      }
+      shippingAddress = savedAddress.toObject()
     }
+
+    if ((!shippingAddress || !shippingAddress.name) && req.user.defaultAddressId) {
+      const defaultAddress = req.user.addresses?.id(req.user.defaultAddressId)
+      if (defaultAddress) {
+        shippingAddress = defaultAddress.toObject()
+      }
+    }
+
+    shippingAddress = normalizeShippingAddress(shippingAddress || {})
 
     const paymentMethod = (req.body.paymentMethod || 'COD').toUpperCase()
 
@@ -83,9 +144,7 @@ router.post('/', auth, upload.single('prescription'), async (req, res) => {
       validationErrors.push({ field: 'paymentMethod', message: 'Invalid payment method' })
     }
 
-    if (!req.file && !req.body.prescriptionUrl) {
-      validationErrors.push({ field: 'prescription', message: 'Prescription file is required' })
-    }
+    // Prescription is optional; do not enforce file/url presence here.
 
     if (validationErrors.length) {
       return res.status(400).json({
@@ -254,6 +313,114 @@ router.get('/all', verifyAdminToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch orders'
+    })
+  }
+})
+
+router.get('/saved-addresses', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+
+    if (user?.addresses?.length) {
+      const addresses = user.addresses.map((addr) => ({
+        ...addr.toObject(),
+        id: addr._id,
+        isDefault: user.defaultAddressId?.toString() === addr._id.toString()
+      }))
+
+      return res.json({
+        success: true,
+        data: addresses
+      })
+    }
+
+    const orders = await Order.find(
+      { user: req.user._id },
+      { shippingAddress: 1, createdAt: 1 }
+    )
+      .sort({ createdAt: -1 })
+      .limit(50)
+
+    const seenKeys = new Set()
+    const savedAddresses = []
+
+    for (const order of orders) {
+      const normalized = normalizeShippingAddress(order.shippingAddress || {})
+      const key = buildAddressKey(normalized)
+
+      if (!normalized.address || !normalized.pincode || seenKeys.has(key)) {
+        continue
+      }
+
+      seenKeys.add(key)
+      savedAddresses.push({
+        id: `${order._id}-${savedAddresses.length}`,
+        ...normalized,
+        orderId: order._id,
+        lastUsed: order.createdAt
+      })
+    }
+
+    res.json({
+      success: true,
+      data: savedAddresses
+    })
+  } catch (error) {
+    console.error('Fetch saved addresses error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch saved addresses'
+    })
+  }
+})
+
+router.post('/select-address', auth, async (req, res) => {
+  try {
+    const { addressId } = req.body || {}
+    if (!addressId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Address ID is required'
+      })
+    }
+
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    const address = user.addresses.id(addressId)
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found'
+      })
+    }
+
+    user.defaultAddressId = address._id
+    user.addresses = user.addresses.map((addr) => {
+      addr.isDefault = addr._id.toString() === address._id.toString()
+      return addr
+    })
+
+    await user.save()
+
+    res.json({
+      success: true,
+      message: 'Address selected successfully',
+      data: {
+        addressId: address._id,
+        address
+      }
+    })
+  } catch (error) {
+    console.error('Select address error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to select address'
     })
   }
 })

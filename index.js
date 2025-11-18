@@ -25,6 +25,7 @@ import adminOrderRoutes from './src/routes/admin/orders.js'
 import adminPrescriptionRoutes from './src/routes/admin/prescriptions.js'
 import adminDashboardRoutes from './src/routes/admin/dashboard.js'
 import profileRoutes from './routes/profile.js'
+import addressRoutes from './routes/addresses.js'
 dotenv.config()
 
 // Global error handlers to prevent Vercel crashes
@@ -35,10 +36,11 @@ process.on('unhandledRejection', (reason, promise) => {
 // Initialize Express app
 const app = express()
 
-// Security middleware
+// Security middleware - configured to allow Google OAuth
 app.use(helmet({
   contentSecurityPolicy: false, // Allow inline scripts for better performance
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false, // Disable COEP to allow Google OAuth
+  crossOriginOpenerPolicy: { policy: 'unsafe-none' } // Explicitly disable COOP for Google OAuth
 }))
 
 // Compression middleware - compress all responses
@@ -68,7 +70,6 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     // Always allow requests with no origin (mobile apps, Postman, curl, etc.)
-    // This is important for mobile browsers and some mobile apps
     if (!origin) {
       return callback(null, true);
     }
@@ -85,12 +86,11 @@ app.use(cors({
     });
 
     // In production/Vercel, always allow for better mobile compatibility
-    // This ensures mobile browsers work correctly
     if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
       return callback(null, true);
     }
 
-    // In development, be more strict
+    // In development, check allowed origins
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -98,13 +98,21 @@ app.use(cors({
       return callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
+  credentials: true, // Allow credentials for Google OAuth
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   exposedHeaders: ["Content-Range", "X-Content-Range"],
   maxAge: 86400, // 24 hours preflight cache
-  optionsSuccessStatus: 200 // Some mobile browsers need this
+  optionsSuccessStatus: 200
 }));
+
+// Explicitly remove COOP headers for Google OAuth compatibility
+app.use((req, res, next) => {
+  // Remove Cross-Origin-Opener-Policy header if present
+  res.removeHeader('Cross-Origin-Opener-Policy')
+  res.removeHeader('cross-origin-opener-policy')
+  next()
+})
 
 // Rate limiting
 const limiter = rateLimit({
@@ -281,6 +289,7 @@ app.use('/api/prescriptions', prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
 app.use('/api/profile', auth, profileRoutes)
+app.use('/api/addresses', auth, addressRoutes)
 app.use('/api/admin/products', adminProductRoutes)
 app.use('/api/admin/users', adminUserRoutes)
 app.use('/api/admin/orders', adminOrderRoutes)

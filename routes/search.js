@@ -5,7 +5,10 @@ import { searchCombined } from '../src/controllers/searchController.js'
 const router = express.Router()
 
 router.get('/', [
-  query('search').trim().notEmpty().withMessage('Search term is required')
+  // Accept either 'search' or 'q'
+  query('search').optional().isString().trim(),
+  query('q').optional().isString().trim(),
+  query('limit').optional().isInt({ min: 1, max: 50 })
 ], async (req, res) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {

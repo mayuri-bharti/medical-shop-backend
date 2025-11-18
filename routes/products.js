@@ -27,13 +27,17 @@ const getAllProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1
     const limit = parseInt(req.query.limit) || 20
     const skip = (page - 1) * limit
-    const { category, search, sort } = req.query
+    const { category, search, sort, brand } = req.query
 
     // Build filter - only show active products
     const filter = { isActive: true }
     
     if (category) {
       filter.category = category
+    }
+    
+    if (brand) {
+      filter.brand = { $regex: brand, $options: 'i' }
     }
     
     if (search) {
@@ -164,6 +168,7 @@ router.get('/', [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('category').optional().isString(),
+  query('brand').optional().isString(),
   query('search').optional().isString(),
   query('sort').optional().isIn(['name', 'price_asc', 'price_desc', 'rating', 'created'])
 ], cache(60), getAllProducts)

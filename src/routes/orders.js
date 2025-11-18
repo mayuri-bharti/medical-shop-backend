@@ -7,6 +7,7 @@ import {
   getUserOrders,
   getOrderTracking
 } from '../controllers/orderController.js'
+import User from '../../models/User.js'
 
 const router = express.Router()
 
@@ -41,13 +42,15 @@ const checkoutValidators = [
   body('selectedItems').isArray({ min: 1 }).withMessage('selectedItems must include at least one entry'),
   body('selectedItems.*.cartItemId').optional().isMongoId().withMessage('cartItemId must be a valid identifier'),
   body('selectedItems.*.productId').optional().isMongoId().withMessage('productId must be a valid identifier'),
+  body('selectedItems.*.medicineId').optional().isMongoId().withMessage('medicineId must be a valid identifier'),
+  body('selectedItems.*.itemType').optional().isIn(['product', 'medicine']).withMessage('Invalid item type'),
   body('selectedItems.*.quantity')
     .optional()
     .isInt({ min: 1 })
     .withMessage('quantity must be at least 1'),
   body('selectedItems.*').custom((item) => {
-    if (!item.cartItemId && !item.productId) {
-      throw new Error('Provide either cartItemId or productId for each selected item')
+    if (!item.cartItemId && !item.productId && !item.medicineId) {
+      throw new Error('Provide either cartItemId or productId or medicineId for each selected item')
     }
     return true
   }),
@@ -78,6 +81,61 @@ router.get('/my-orders', auth, getUserOrders)
  * IMPORTANT: This route must come before /:id to avoid route conflicts.
  */
 router.get('/:id/tracking', auth, getOrderTracking)
+
+/**
+ * POST /orders/select-address
+ * Persist user's selected address for subsequent checkouts.
+ */
+router.post('/select-address', auth, async (req, res) => {
+  try {
+    const { addressId } = req.body || {}
+    if (!addressId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Address ID is required'
+      })
+    }
+
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    const address = user.addresses.id(addressId)
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found'
+      })
+    }
+
+    user.defaultAddressId = address._id
+    user.addresses = user.addresses.map((addr) => {
+      addr.isDefault = addr._id.toString() === address._id.toString()
+      return addr
+    })
+
+    await user.save()
+
+    res.json({
+      success: true,
+      message: 'Address selected successfully',
+      data: {
+        addressId: address._id,
+        address
+      }
+    })
+  } catch (error) {
+    console.error('Select address error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to select address'
+    })
+  }
+})
 
 /**
  * GET /orders/:id

@@ -72,10 +72,11 @@ const resolveSelectedCartItems = async (cart, selectedItems = []) => {
   for (const input of selectedItems) {
     const cartItemId = input.cartItemId?.toString()
     const productId = input.productId?.toString()
+    const medicineId = input.medicineId?.toString()
 
-    if (!cartItemId && !productId) {
+    if (!cartItemId && !productId && !medicineId) {
       throw new CheckoutError(
-        'Each selected item must include cartItemId or productId',
+        'Each selected item must include cartItemId or productId or medicineId',
         'IDENTIFIER_REQUIRED',
         { item: input }
       )
@@ -86,15 +87,20 @@ const resolveSelectedCartItems = async (cart, selectedItems = []) => {
       cartItem = cart.items.id(cartItemId)
     }
 
-    if (!cartItem && productId) {
-      cartItem = cart.items.find((item) => item.product.toString() === productId)
+    if (!cartItem && (productId || medicineId)) {
+      cartItem = cart.items.find((item) => {
+        if (medicineId) {
+          return item.itemType === 'medicine' && item.medicine?.toString() === medicineId
+        }
+        return item.itemType === 'product' && item.product?.toString() === productId
+      })
     }
 
     if (!cartItem) {
       throw new CheckoutError(
         'Selected item is not present in your cart',
         'ITEM_NOT_FOUND',
-        { cartItemId, productId }
+        { cartItemId, productId, medicineId }
       )
     }
 
@@ -125,35 +131,44 @@ const resolveSelectedCartItems = async (cart, selectedItems = []) => {
       )
     }
 
-    const resolvedProductId = cartItem.product?._id?.toString() ?? cartItem.product.toString()
-    let product = productCache.get(resolvedProductId)
+    if (cartItem.itemType === 'product') {
+      const resolvedProductId = cartItem.product?._id?.toString() ?? cartItem.product.toString()
+      let product = productCache.get(resolvedProductId)
 
-    if (!product) {
-      product = await Product.findById(resolvedProductId)
-      productCache.set(resolvedProductId, product)
+      if (!product) {
+        product = await Product.findById(resolvedProductId)
+        productCache.set(resolvedProductId, product)
+      }
+
+      if (!product || !product.isActive) {
+        throw new CheckoutError(
+          'Selected product is no longer available',
+          'PRODUCT_UNAVAILABLE',
+          { productId: resolvedProductId }
+        )
+      }
+
+      if (product.stock < quantity) {
+        throw new CheckoutError(
+          `Insufficient stock for ${product.name}`,
+          'INSUFFICIENT_STOCK',
+          { productId: resolvedProductId, requested: quantity, stock: product.stock }
+        )
+      }
+
+      resolved.push({
+        cartItem,
+        product,
+        quantity
+      })
+    } else {
+      // Medicine items: no Product lookup or stock enforcement here
+      resolved.push({
+        cartItem,
+        product: null,
+        quantity
+      })
     }
-
-    if (!product || !product.isActive) {
-      throw new CheckoutError(
-        'Selected product is no longer available',
-        'PRODUCT_UNAVAILABLE',
-        { productId: resolvedProductId }
-      )
-    }
-
-    if (product.stock < quantity) {
-      throw new CheckoutError(
-        `Insufficient stock for ${product.name}`,
-        'INSUFFICIENT_STOCK',
-        { productId: resolvedProductId, requested: quantity, stock: product.stock }
-      )
-    }
-
-    resolved.push({
-      cartItem,
-      product,
-      quantity
-    })
   }
 
   return resolved
@@ -244,13 +259,26 @@ export const checkoutSelectedItems = async (req, res) => {
     const resolvedItems = await resolveSelectedCartItems(cart, selectedItems)
     const totals = calculateTotals(resolvedItems)
 
-    const orderItems = resolvedItems.map(({ cartItem, quantity }) => ({
-      product: cartItem.product._id ?? cartItem.product,
-      quantity,
-      price: cartItem.price,
-      name: cartItem.product.name,
-      image: cartItem.product.images?.[0] || ''
-    }))
+    const orderItems = resolvedItems.map(({ cartItem, product, quantity }) => {
+      if (cartItem.itemType === 'medicine') {
+        return {
+          itemType: 'medicine',
+          medicine: cartItem.medicine,
+          quantity,
+          price: cartItem.price,
+          name: cartItem.name,
+          image: cartItem.image
+        }
+      }
+      return {
+        itemType: 'product',
+        product: product?._id ?? cartItem.product,
+        quantity,
+        price: cartItem.price,
+        name: product?.name ?? cartItem.name,
+        image: product?.images?.[0] || cartItem.image || ''
+      }
+    })
 
     const order = new Order({
       user: req.user._id,
@@ -288,9 +316,12 @@ export const checkoutSelectedItems = async (req, res) => {
     }
 
     // Reduce inventory only for items that were actually purchased.
-    for (const { product, quantity } of resolvedItems) {
-      product.reduceStock(quantity)
-      await product.save()
+    for (const { cartItem, product, quantity } of resolvedItems) {
+      if (cartItem.itemType === 'product' && product) {
+        product.reduceStock(quantity)
+        await product.save()
+      }
+      // Medicines: no stock mutation
     }
 
     // Remove only the purchased items (or decrease their quantities) from the cart.

@@ -1,10 +1,18 @@
 import mongoose from 'mongoose'
 
 const cartItemSchema = new mongoose.Schema({
+  itemType: {
+    type: String,
+    enum: ['product', 'medicine'],
+    default: 'product'
+  },
   product: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product',
-    required: true
+    ref: 'Product'
+  },
+  medicine: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AllMedicine'
   },
   quantity: {
     type: Number,
@@ -15,7 +23,9 @@ const cartItemSchema = new mongoose.Schema({
   price: {
     type: Number,
     required: true
-  }
+  },
+  name: String,
+  image: String
 })
 
 const cartSchema = new mongoose.Schema({
@@ -64,19 +74,38 @@ cartSchema.methods.calculateTotals = function() {
 }
 
 // Method to add item to cart
-cartSchema.methods.addItem = function(productId, quantity, price) {
-  const existingItem = this.items.find(item => 
-    item.product.toString() === productId.toString()
-  )
+cartSchema.methods.addItem = function({ itemType = 'product', productId, medicineId, quantity, price, name, image }) {
+  const matcher = (item) => {
+    if (itemType === 'medicine') {
+      return item.itemType === 'medicine' && item.medicine?.toString() === medicineId?.toString()
+    }
+    return item.itemType === 'product' && item.product?.toString() === productId?.toString()
+  }
+
+  const existingItem = this.items.find(matcher)
   
   if (existingItem) {
     existingItem.quantity += quantity
   } else {
-    this.items.push({
-      product: productId,
-      quantity,
-      price
-    })
+    if (itemType === 'medicine') {
+      this.items.push({
+        itemType: 'medicine',
+        medicine: medicineId,
+        quantity,
+        price,
+        name,
+        image
+      })
+    } else {
+      this.items.push({
+        itemType: 'product',
+        product: productId,
+        quantity,
+        price,
+        name,
+        image
+      })
+    }
   }
   
   this.calculateTotals()
@@ -84,16 +113,17 @@ cartSchema.methods.addItem = function(productId, quantity, price) {
 }
 
 // Method to update item quantity
-cartSchema.methods.updateItemQuantity = function(productId, quantity) {
-  const item = this.items.find(item => 
-    item.product.toString() === productId.toString()
-  )
+cartSchema.methods.updateItemQuantity = function({ itemType = 'product', productId, medicineId, quantity }) {
+  const item = this.items.find((i) => {
+    if (itemType === 'medicine') {
+      return i.itemType === 'medicine' && i.medicine?.toString() === medicineId?.toString()
+    }
+    return i.itemType === 'product' && i.product?.toString() === productId?.toString()
+  })
   
   if (item) {
     if (quantity <= 0) {
-      this.items = this.items.filter(item => 
-        item.product.toString() !== productId.toString()
-      )
+      this.items = this.items.filter((i) => i !== item)
     } else {
       item.quantity = quantity
     }
@@ -105,10 +135,13 @@ cartSchema.methods.updateItemQuantity = function(productId, quantity) {
 }
 
 // Method to remove item from cart
-cartSchema.methods.removeItem = function(productId) {
-  this.items = this.items.filter(item => 
-    item.product.toString() !== productId.toString()
-  )
+cartSchema.methods.removeItem = function({ itemType = 'product', productId, medicineId }) {
+  this.items = this.items.filter((i) => {
+    if (itemType === 'medicine') {
+      return !(i.itemType === 'medicine' && i.medicine?.toString() === medicineId?.toString())
+    }
+    return !(i.itemType === 'product' && i.product?.toString() === productId?.toString())
+  })
   this.calculateTotals()
   return this
 }

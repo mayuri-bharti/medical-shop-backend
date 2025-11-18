@@ -1,11 +1,64 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 
+const addressSchema = new mongoose.Schema({
+  label: {
+    type: String,
+    trim: true,
+    default: 'Home'
+  },
+  name: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  phoneNumber: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  address: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  city: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  state: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  pincode: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  landmark: {
+    type: String,
+    trim: true
+  },
+  isDefault: {
+    type: Boolean,
+    default: false
+  }
+}, {
+  _id: true,
+  timestamps: true
+})
+
 const userSchema = new mongoose.Schema({
   phone: {
     type: String,
-    required: true,
+    required: function() {
+      // Phone is required only if googleId is not present
+      return !this.googleId
+    },
     unique: true,
+    sparse: true,
     trim: true
   },
   name: {
@@ -17,6 +70,12 @@ const userSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
     sparse: true
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
   },
   password: {
     type: String,
@@ -35,6 +94,13 @@ const userSchema = new mongoose.Schema({
   isBlocked: {
     type: Boolean,
     default: false
+  },
+  addresses: {
+    type: [addressSchema],
+    default: []
+  },
+  defaultAddressId: {
+    type: mongoose.Schema.Types.ObjectId
   }
 }, {
   timestamps: true,
@@ -77,6 +143,27 @@ userSchema.methods.toJSON = function() {
   delete user.__v
   delete user.password
   return user
+}
+
+userSchema.methods.getPublicProfile = function() {
+  const user = this.toObject({
+    virtuals: true
+  })
+  delete user.password
+  delete user.__v
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    isVerified: user.isVerified,
+    isBlocked: user.isBlocked,
+    addresses: user.addresses || [],
+    defaultAddressId: user.defaultAddressId || null,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  }
 }
 
 export default mongoose.model('User', userSchema)
