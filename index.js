@@ -19,11 +19,15 @@ import orderRoutes from './src/routes/orders.js'
 import productRoutes from './routes/products.js'
 import allMedicineRoutes from './routes/allmedecine.js'
 import searchRoutes from './routes/search.js'
+import doctorRoutes from './routes/doctors.js'
+import appointmentRoutes from './routes/appointments.js'
 import adminProductRoutes from './src/routes/admin/products.js'
 import adminUserRoutes from './src/routes/admin/users.js'
 import adminOrderRoutes from './src/routes/admin/orders.js'
 import adminPrescriptionRoutes from './src/routes/admin/prescriptions.js'
 import adminDashboardRoutes from './src/routes/admin/dashboard.js'
+import adminDoctorRoutes from './src/routes/admin/doctors.js'
+import adminAppointmentRoutes from './src/routes/admin/appointments.js'
 import profileRoutes from './routes/profile.js'
 import addressRoutes from './routes/addresses.js'
 dotenv.config()
@@ -285,6 +289,8 @@ console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
 app.use('/api/allmedecine', allMedicineRoutes)
 app.use('/api/search', searchRoutes)
+app.use('/api/doctors', doctorRoutes)
+app.use('/api/appointments', appointmentRoutes)
 app.use('/api/prescriptions', prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
@@ -295,6 +301,8 @@ app.use('/api/admin/users', adminUserRoutes)
 app.use('/api/admin/orders', adminOrderRoutes)
 app.use('/api/admin/prescriptions', adminPrescriptionRoutes)
 app.use('/api/admin/dashboard', adminDashboardRoutes)
+app.use('/api/admin/doctors', adminDoctorRoutes)
+app.use('/api/admin/appointments', adminAppointmentRoutes)
 
 // Default route
 app.get('/', (req, res) => {
