@@ -1,6 +1,11 @@
 import mongoose from 'mongoose'
 
 const orderItemSchema = new mongoose.Schema({
+  orderItemId: {
+    type: String,
+    default: () => new mongoose.Types.ObjectId().toString(),
+    index: true
+  },
   itemType: {
     type: String,
     enum: ['product', 'medicine'],
@@ -133,6 +138,14 @@ const orderSchema = new mongoose.Schema({
   notes: {
     type: String
   },
+  cancellation: {
+    reason: { type: String },
+    cancelledAt: { type: Date },
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
   statusHistory: {
     type: [statusHistorySchema],
     default: []
@@ -187,14 +200,24 @@ orderSchema.methods.updateStatus = async function(status, { changedBy, note } = 
 }
 
 // Method to cancel order
-orderSchema.methods.cancelOrder = function(reason) {
+orderSchema.methods.cancelOrder = async function(reason, userId) {
   const cancellableStatuses = ['processing', 'out for delivery']
-  if (cancellableStatuses.includes(this.status)) {
-    this.status = 'cancelled'
-    this.notes = reason ? `Cancelled: ${reason}` : 'Order cancelled'
-    return this.save()
+  if (!cancellableStatuses.includes(this.status)) {
+    throw new Error('Cannot cancel order in current status')
   }
-  throw new Error('Cannot cancel order in current status')
+
+  this.cancellation = {
+    reason: reason?.trim() || 'Order cancelled',
+    cancelledAt: new Date(),
+    cancelledBy: userId || undefined
+  }
+
+  await this.updateStatus('cancelled', {
+    changedBy: userId,
+    note: this.cancellation.reason
+  })
+
+  return this
 }
 
 orderSchema.pre('save', function(next) {

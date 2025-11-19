@@ -31,6 +31,8 @@ import adminAppointmentRoutes from './src/routes/admin/appointments.js'
 import profileRoutes from './routes/profile.js'
 import addressRoutes from './routes/addresses.js'
 import returnRoutes from './routes/returns.js'
+import contactRoutes from './routes/contact.js'
+import adminContactRoutes from './src/routes/admin/contact.js'
 dotenv.config()
 
 // Global error handlers to prevent Vercel crashes
@@ -309,6 +311,7 @@ app.use('/api/prescriptions', prescriptionRoutes)
 app.use('/api/cart', auth, cartRoutes)
 app.use('/api/orders', auth, orderRoutes)
 app.use('/api/returns', returnRoutes)
+app.use('/api/contact', contactRoutes)
 app.use('/api/profile', auth, profileRoutes)
 app.use('/api/addresses', auth, addressRoutes)
 app.use('/api/admin/products', adminProductRoutes)
@@ -318,6 +321,7 @@ app.use('/api/admin/prescriptions', adminPrescriptionRoutes)
 app.use('/api/admin/dashboard', adminDashboardRoutes)
 app.use('/api/admin/doctors', adminDoctorRoutes)
 app.use('/api/admin/appointments', adminAppointmentRoutes)
+app.use('/api/admin/contact', adminContactRoutes)
 
 // Default route
 app.get('/', (req, res) => {

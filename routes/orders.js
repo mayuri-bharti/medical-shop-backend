@@ -425,6 +425,69 @@ router.post('/select-address', auth, async (req, res) => {
   }
 })
 
+router.post('/:id/cancel', auth, [
+  body('reason')
+    .optional()
+    .isString()
+    .isLength({ min: 3, max: 500 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      user: req.user._id
+    })
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      })
+    }
+
+    const cancellableStatuses = ['processing', 'out for delivery']
+    if (!cancellableStatuses.includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order cannot be cancelled in its current status.'
+      })
+    }
+
+    await order.cancelOrder(req.body.reason, req.user._id)
+
+    for (const item of order.items) {
+      if (!item.product) continue
+      const product = await Product.findById(item.product)
+      if (product) {
+        product.stock += item.quantity
+        await product.save()
+      }
+    }
+
+    await order.populate('items.product')
+
+    res.json({
+      success: true,
+      message: 'Order cancelled successfully',
+      data: projectOrder(order)
+    })
+  } catch (error) {
+    console.error('Cancel order error:', error)
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to cancel order'
+    })
+  }
+})
+
 router.put('/:id/status', verifyAdminToken, [
   body('status').isString().notEmpty()
 ], async (req, res) => {

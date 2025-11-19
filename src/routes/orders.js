@@ -5,7 +5,8 @@ import {
   checkoutSelectedItems,
   getOrderById,
   getUserOrders,
-  getOrderTracking
+  getOrderTracking,
+  cancelOrder
 } from '../controllers/orderController.js'
 import User from '../../models/User.js'
 
@@ -136,6 +137,16 @@ router.post('/select-address', auth, async (req, res) => {
     })
   }
 })
+
+/**
+ * POST /orders/:id/cancel
+ * Cancel an order with a provided reason.
+ */
+router.post('/:id/cancel', auth, [
+  body('reason')
+    .isString()
+    .isLength({ min: 10, max: 500 })
+], cancelOrder)
 
 /**
  * GET /orders/:id

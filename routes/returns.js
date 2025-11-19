@@ -23,11 +23,16 @@ const returnStatuses = [
 router.post('/', auth, [
   body('orderId').isMongoId().withMessage('Valid order ID is required'),
   body('items').isArray().withMessage('Items array is required'),
-  body('items.*.orderItemId').notEmpty().withMessage('Order item ID is required'),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Valid quantity is required'),
   body('reason').isIn(['defective', 'wrong_item', 'damaged', 'not_as_described', 'expired', 'other']).withMessage('Valid reason is required'),
   body('reasonDescription').trim().isLength({ min: 10, max: 1000 }).withMessage('Reason description must be between 10 and 1000 characters'),
-  body('refundMethod').optional().isIn(['original', 'wallet', 'bank_transfer']).withMessage('Valid refund method is required')
+  body('refundMethod').optional().isIn(['original', 'wallet', 'bank_transfer']).withMessage('Valid refund method is required'),
+  body('items.*').custom((item, { path }) => {
+    if (!item.orderItemId && !item.orderProductId && !item.orderMedicineId) {
+      throw new Error('Order item reference is required')
+    }
+    return true
+  })
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -75,8 +80,32 @@ router.post('/', auth, [
     const returnItems = []
     let totalRefund = 0
 
+    const normalizeId = (value) => {
+      if (!value) return ''
+      if (typeof value === 'string') return value
+      if (typeof value === 'object' && value.toString) return value.toString()
+      return String(value)
+    }
+
     for (const returnItem of items) {
-      const orderItem = order.items.find(item => item._id.toString() === returnItem.orderItemId)
+      const returnOrderItemId = normalizeId(returnItem.orderItemId)
+      const returnProductId = normalizeId(returnItem.orderProductId)
+      const returnMedicineId = normalizeId(returnItem.orderMedicineId)
+
+      const orderItem = order.items.find(item => {
+        const candidateIds = [
+          normalizeId(item.orderItemId),
+          normalizeId(item._id),
+          normalizeId(item.product?._id || item.product),
+          normalizeId(item.medicine?._id || item.medicine)
+        ].filter(Boolean)
+
+        return candidateIds.some(id =>
+          id === returnOrderItemId ||
+          id === returnProductId ||
+          id === returnMedicineId
+        )
+      })
       
       if (!orderItem) {
         return res.status(400).json({
@@ -101,7 +130,7 @@ router.post('/', auth, [
       }
 
       returnItems.push({
-        orderItem: orderItem._id,
+        orderItem: orderItem._id || orderItem.orderItemId || orderItem.product,
         product: orderItem.product,
         quantity: returnItem.quantity,
         price: orderItem.price,
