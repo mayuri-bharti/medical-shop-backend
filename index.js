@@ -132,13 +132,26 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter)
 
-// Stricter rate limit for auth endpoints
+// Stricter rate limit for auth endpoints (public/user logins)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: 5, // limit each IP to 5 user login attempts
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true
+})
+
+// More relaxed rate limit for admin auth (admins often need multiple attempts while testing)
+const adminAuthLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 20, // allow more attempts for admin portals
+  message: {
+    success: false,
+    message: 'Too many admin login attempts from this IP. Please wait a moment and try again.'
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -284,7 +297,7 @@ if (!process.env.VERCEL) {
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)
 console.log('✅ Auth routes registered at /api/auth')
-app.use('/api/admin/auth', authLimiter, adminAuthRoutes)
+app.use('/api/admin/auth', adminAuthLimiter, adminAuthRoutes)
 console.log('✅ Admin auth routes registered at /api/admin/auth')
 app.use('/api/products', productRoutes)
 app.use('/api/allmedecine', allMedicineRoutes)
