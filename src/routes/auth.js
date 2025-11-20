@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator'
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'
 import { OAuth2Client } from 'google-auth-library'
+import { verifyGoogleToken } from '../utils/verifyGoogleToken.js'
 import User from '../../models/User.js'
 import { auth } from '../middleware/auth.js'
 import { sendOtpSms } from '../services/otpProvider.js'
@@ -26,7 +27,7 @@ const checkRateLimit = (req, res, next) => {
   const ip = req.ip || req.connection.remoteAddress
   const phone = req.body.phone
   
-  const WINDOW_MS = 60 * 1000 // 1 minute
+  const WINDOW_MS =1* 60 * 1000 // 1 minute
   const MAX_REQUESTS = 5 // Max 5 requests per minute per IP/phone
   
   // Check IP rate limit
@@ -561,7 +562,10 @@ router.post('/login-password', [
 router.post('/google', [
   body('credential')
     .notEmpty()
-    .withMessage('Google credential token is required')
+    .withMessage('Google credential token is required'),
+  body('clientId')
+    .optional()
+    .isString()
 ], async (req, res) => {
   try {
     // Check MongoDB connection
@@ -582,7 +586,7 @@ router.post('/google', [
       })
     }
 
-    const { credential } = req.body
+    const { credential, clientId: clientIdFromRequest } = req.body
     
     if (!credential || typeof credential !== 'string') {
       return res.status(400).json({
@@ -591,75 +595,37 @@ router.post('/google', [
       })
     }
 
-    // Validate credential format (should be a JWT with 3 parts separated by dots)
-    const credentialParts = credential.split('.')
-    if (credentialParts.length !== 3) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid Google credential token format. Expected JWT format.'
+    // Build list of allowed client IDs (from request + env)
+    const collectedClientIds = []
+
+    if (typeof clientIdFromRequest === 'string' && clientIdFromRequest.trim()) {
+      collectedClientIds.push(clientIdFromRequest.trim())
+    }
+
+    if (process.env.GOOGLE_CLIENT_ID) {
+      process.env.GOOGLE_CLIENT_ID.split(',').forEach((id) => {
+        if (id && id.trim()) {
+          collectedClientIds.push(id.trim())
+        }
       })
     }
 
-    // Verify Google JWT token using google-auth-library
+    const uniqueClientIds = collectedClientIds.length > 0 ? collectedClientIds : null
+
+    // Verify Google JWT token using utility function
     let googleUser
     try {
-      const client = new OAuth2Client()
-      
-      // Build verification options
-      const verifyOptions = {
-        idToken: credential
-      }
-      
-      // Only add audience if GOOGLE_CLIENT_ID is set
-      // This allows verification without strict audience checking
-      if (process.env.GOOGLE_CLIENT_ID) {
-        verifyOptions.audience = process.env.GOOGLE_CLIENT_ID
-      } else {
-        console.warn('⚠️  GOOGLE_CLIENT_ID not set in environment. Token verification will proceed without audience check.')
-      }
-      
-      const ticket = await client.verifyIdToken(verifyOptions)
-      const payload = ticket.getPayload()
-      
-      if (!payload) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid Google credential token - no payload received'
-        })
-      }
-
-      // Validate required fields
-      if (!payload.email && !payload.sub) {
-        return res.status(400).json({
-          success: false,
-          message: 'Google token missing required information (email or sub)'
-        })
-      }
-
-      googleUser = {
-        email: payload.email,
-        name: payload.name || payload.given_name || undefined,
-        picture: payload.picture,
-        emailVerified: payload.email_verified || false,
-        sub: payload.sub
-      }
+      googleUser = await verifyGoogleToken(credential, uniqueClientIds)
     } catch (err) {
-      // Log full error for debugging
+      // Log error for debugging
       console.error('❌ Google token verification error:', {
         message: err.message,
-        code: err.code,
-        name: err.name,
-        type: err.constructor.name,
-        fullError: err.toString()
+        credentialLength: credential.length,
+        clientIdsConfigured: !!uniqueClientIds
       })
       
-      // Log credential info (first 50 chars only for security)
-      console.log('📝 Credential received (first 50 chars):', credential.substring(0, 50) + '...')
-      console.log('📝 Credential length:', credential.length)
-      console.log('📝 GOOGLE_CLIENT_ID set:', !!process.env.GOOGLE_CLIENT_ID)
-      
-      // Handle expired token specifically
-      if (err.message && (err.message.includes('expired') || err.message.includes('Expired') || err.message.includes('used too late') || err.code === 'auth/id-token-expired')) {
+      // Handle specific error types
+      if (err.message && err.message.includes('TOKEN_EXPIRED')) {
         return res.status(401).json({
           success: false,
           message: 'TOKEN_EXPIRED',
@@ -668,8 +634,7 @@ router.post('/google', [
         })
       }
       
-      // Handle audience mismatch
-      if (err.message && (err.message.includes('audience') || err.message.includes('Audience'))) {
+      if (err.message && err.message.includes('AUDIENCE_MISMATCH')) {
         return res.status(400).json({
           success: false,
           message: 'Token audience mismatch. Please check GOOGLE_CLIENT_ID configuration.',
@@ -678,8 +643,7 @@ router.post('/google', [
         })
       }
       
-      // Handle invalid token format
-      if (err.message && (err.message.includes('Invalid token') || err.message.includes('malformed'))) {
+      if (err.message && err.message.includes('INVALID_TOKEN')) {
         return res.status(400).json({
           success: false,
           message: 'Invalid Google credential token format',
@@ -692,12 +656,8 @@ router.post('/google', [
         success: false,
         message: 'Failed to verify Google credential token',
         error: err.message || 'Unknown verification error',
-        errorCode: err.code,
-        errorName: err.name,
         details: process.env.NODE_ENV === 'development' ? {
-          message: err.message,
-          code: err.code,
-          name: err.name
+          message: err.message
         } : undefined
       })
     }

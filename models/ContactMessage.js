@@ -70,3 +70,5 @@ export const CONTACT_STATUSES = contactStatuses
 
 export default mongoose.model('ContactMessage', contactMessageSchema)
 
+
+
