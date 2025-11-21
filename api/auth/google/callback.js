@@ -65,6 +65,23 @@ export default async function handler(req, res) {
       return res.redirect(errorUrl.toString())
     }
 
+    // Validate that we have the required OAuth parameters from Google
+    // If someone accesses this URL directly without going through OAuth flow, redirect them
+    if (!req.query.code && !req.query.error) {
+      console.warn('⚠️  Callback accessed without OAuth parameters. Redirecting to login.')
+      const errorUrl = new URL(`${FRONTEND_URL}/login`)
+      errorUrl.searchParams.set('error', encodeURIComponent('Invalid OAuth callback. Please try logging in again.'))
+      return res.redirect(errorUrl.toString())
+    }
+
+    // Check for OAuth errors from Google
+    if (req.query.error) {
+      console.error('❌ Google OAuth error in callback:', req.query.error, req.query.error_description)
+      const errorUrl = new URL(`${FRONTEND_URL}/login`)
+      errorUrl.searchParams.set('error', encodeURIComponent(req.query.error_description || req.query.error || 'OAuth error occurred'))
+      return res.redirect(errorUrl.toString())
+    }
+
     // Ensure database connection
     await ensureDB()
 

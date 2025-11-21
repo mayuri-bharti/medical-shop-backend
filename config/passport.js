@@ -8,25 +8,44 @@ export const isGoogleAuthConfigured = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRE
 
 const getCallbackURL = () => {
   try {
-    // For Vercel serverless, use /api/auth/google/callback path
-    if (process.env.VERCEL || process.env.VERCEL_URL) {
-      const baseUrl = process.env.VERCEL_URL || 'medical-shop-backend.vercel.app'
-      // Serverless functions are under /api path
-      return `https://${baseUrl}/api/auth/google/callback`
-    }
-    // For custom deployments
+    // Priority 1: Explicit callback URL environment variable
     if (process.env.GOOGLE_CALLBACK_URL) {
+      console.log('✅ Using GOOGLE_CALLBACK_URL from environment:', process.env.GOOGLE_CALLBACK_URL)
       return process.env.GOOGLE_CALLBACK_URL
     }
+    
+    // Priority 2: Vercel serverless detection - use /api/auth/google/callback path
+    if (process.env.VERCEL || process.env.VERCEL_URL) {
+      const baseUrl = process.env.VERCEL_URL || process.env.VERCEL_DOMAIN || 'medical-shop-backend.vercel.app'
+      const callbackUrl = `https://${baseUrl}/api/auth/google/callback`
+      console.log('✅ Detected Vercel environment. Callback URL:', callbackUrl)
+      return callbackUrl
+    }
+    
+    // Priority 3: Check if we're in production (common indicator)
+    if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+      // If in production but not explicitly set, use default Vercel URL
+      const callbackUrl = 'https://medical-shop-backend.vercel.app/api/auth/google/callback'
+      console.log('✅ Production environment detected. Using default Vercel callback:', callbackUrl)
+      return callbackUrl
+    }
+    
     // Default to localhost for development (non-serverless)
-    return 'http://localhost:4000/auth/google/callback'
+    const localCallback = 'http://localhost:4000/auth/google/callback'
+    console.log('✅ Development environment. Using localhost callback:', localCallback)
+    return localCallback
   } catch (error) {
-    console.error('Error generating callback URL:', error.message)
+    console.error('❌ Error generating callback URL:', error.message)
     return 'http://localhost:4000/auth/google/callback'
   }
 }
 
 const GOOGLE_CALLBACK_URL = getCallbackURL()
+
+// Log the callback URL being used (only once at module load)
+if (typeof process !== 'undefined' && process.env && !process.env.VERCEL) {
+  console.log('🔗 Google OAuth Callback URL configured:', GOOGLE_CALLBACK_URL)
+}
 
 // Only log warnings/errors if not in serverless cold start
 if (typeof process !== 'undefined' && process.env) {
