@@ -332,6 +332,7 @@ if (!process.env.VERCEL) {
 
 // Google OAuth routes (Passport)
 app.use(googleAuthRoutes)
+console.log('✅ Google Auth routes registered at /auth/google and /auth/google/callback')
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)

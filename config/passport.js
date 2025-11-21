@@ -2,28 +2,47 @@ import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import User from '../models/User.js'
 
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET
+export const isGoogleAuthConfigured = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET)
+
 const getCallbackURL = () => {
-  if (process.env.VERCEL_URL) {
-    // Vercel provides VERCEL_URL (e.g., "medical-shop-backend.vercel.app")
-    return `https://${process.env.VERCEL_URL}/auth/google/callback`
+  try {
+    // For Vercel, use VERCEL_URL or custom callback URL
+    if (process.env.VERCEL_URL) {
+      // Vercel provides VERCEL_URL (e.g., "medical-shop-backend.vercel.app")
+      return `https://${process.env.VERCEL_URL}/auth/google/callback`
+    }
+    // For custom deployments
+    if (process.env.GOOGLE_CALLBACK_URL) {
+      return process.env.GOOGLE_CALLBACK_URL
+    }
+    // Default to localhost for development
+    return 'http://localhost:4000/auth/google/callback'
+  } catch (error) {
+    console.error('Error generating callback URL:', error.message)
+    return 'http://localhost:4000/auth/google/callback'
   }
-  if (process.env.GOOGLE_CALLBACK_URL) {
-    return process.env.GOOGLE_CALLBACK_URL
-  }
-  // Default to localhost for development
-  return 'http://localhost:4000/auth/google/callback'
 }
 
 const GOOGLE_CALLBACK_URL = getCallbackURL()
 
-if (!isGoogleAuthConfigured) {
-  console.warn('⚠️  Google OAuth credentials are not fully configured.')
-  console.warn('   GOOGLE_CLIENT_ID:', GOOGLE_CLIENT_ID ? '✓ Set' : '✗ Missing')
-  console.warn('   GOOGLE_CLIENT_SECRET:', GOOGLE_CLIENT_SECRET ? '✓ Set' : '✗ Missing')
-  console.warn('   Please set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file.')
-} else {
-  console.log('✅ Google OAuth credentials configured')
-  console.log('   Callback URL:', GOOGLE_CALLBACK_URL)
+// Only log warnings/errors if not in serverless cold start
+if (typeof process !== 'undefined' && process.env) {
+  if (!isGoogleAuthConfigured) {
+    // Only warn in non-production or if explicitly requested
+    if (process.env.NODE_ENV !== 'production' || process.env.LOG_OAUTH_WARNINGS === 'true') {
+      console.warn('⚠️  Google OAuth credentials are not fully configured.')
+      console.warn('   GOOGLE_CLIENT_ID:', GOOGLE_CLIENT_ID ? '✓ Set' : '✗ Missing')
+      console.warn('   GOOGLE_CLIENT_SECRET:', GOOGLE_CLIENT_SECRET ? '✓ Set' : '✗ Missing')
+    }
+  } else {
+    // Only log success if not in Vercel serverless (to reduce logs)
+    if (!process.env.VERCEL) {
+      console.log('✅ Google OAuth credentials configured')
+      console.log('   Callback URL:', GOOGLE_CALLBACK_URL)
+    }
+  }
 }
 
 passport.serializeUser((user, done) => {
@@ -40,13 +59,14 @@ passport.deserializeUser(async (id, done) => {
 })
 
 if (isGoogleAuthConfigured) {
-  passport.use(
-    new GoogleStrategy(
-      {
-        clientID: GOOGLE_CLIENT_ID,
-        clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL: GOOGLE_CALLBACK_URL
-      },
+  try {
+    passport.use(
+      new GoogleStrategy(
+        {
+          clientID: GOOGLE_CLIENT_ID,
+          clientSecret: GOOGLE_CLIENT_SECRET,
+          callbackURL: GOOGLE_CALLBACK_URL
+        },
       async (accessToken, refreshToken, profile, done) => {
         try {
           if (!profile) {
@@ -348,8 +368,13 @@ if (isGoogleAuthConfigured) {
           return done(error, null)
         }
       }
+      )
     )
-  )
+  } catch (strategyError) {
+    console.error('❌ Failed to initialize Google OAuth Strategy:', strategyError.message)
+    console.error('   This might be due to invalid credentials or callback URL')
+    // Don't throw - allow app to continue without Google OAuth
+  }
 }
 
 export default passport

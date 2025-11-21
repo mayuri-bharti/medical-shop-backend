@@ -4,12 +4,16 @@
  * It imports the Express app and ensures database connection per-request
  */
 
-import app from '../index.js'
-import { connectDB } from '../src/db.js'
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
+import { connectDB } from '../src/db.js'
 
+// Load environment variables first
 dotenv.config()
+
+// Import app - wrap in try-catch at module level won't work, so we'll catch in handler
+// If import fails, Vercel will show the error in logs
+import app from '../index.js'
 
 // For Vercel serverless: Ensure DB connection on each function invocation
 let isConnecting = false
@@ -59,8 +63,8 @@ ensureDBConnection().catch((error) => {
 // Middleware to ensure DB connection on each request
 // This MUST run before routes to ensure DB is connected
 app.use(async (req, res, next) => {
-  // Only check for API routes
-  if (req.path.startsWith('/api') || req.path === '/') {
+  // Check for all routes that need DB (API routes and auth routes)
+  if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path === '/') {
     // If not connected, try to connect
     if (mongoose.connection.readyState !== 1) {
       try {

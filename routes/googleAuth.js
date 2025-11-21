@@ -27,7 +27,7 @@ router.get(
   '/auth/google/callback',
   (req, res, next) => {
     if (!isGoogleAuthConfigured) {
-      return res.redirect('/login-failed')
+      return res.redirect('/auth/login-failed')
     }
     passport.authenticate('google', (err, user, info) => {
       if (err) {
@@ -54,7 +54,9 @@ router.get(
       req.logIn(user, async (loginError) => {
         if (loginError) {
           console.error('Session login error:', loginError)
-          return res.redirect('/login-failed')
+          const errorUrl = new URL(`${FRONTEND_URL}/login`)
+          errorUrl.searchParams.set('error', encodeURIComponent('Session login failed'))
+          return res.redirect(errorUrl.toString())
         }
 
         try {
@@ -96,7 +98,7 @@ router.get('/auth/logout', (req, res) => {
   })
 })
 
-router.get('/login-failed', (req, res) => {
+router.get('/auth/login-failed', (req, res) => {
   res.status(401).json({
     success: false,
     message: 'Google login failed'
