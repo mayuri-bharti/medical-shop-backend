@@ -2,13 +2,19 @@ import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import User from '../models/User.js'
 
-const {
-  GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
-  GOOGLE_CALLBACK_URL = 'http://localhost:4000/auth/google/callback'
-} = process.env
+const getCallbackURL = () => {
+  if (process.env.VERCEL_URL) {
+    // Vercel provides VERCEL_URL (e.g., "medical-shop-backend.vercel.app")
+    return `https://${process.env.VERCEL_URL}/auth/google/callback`
+  }
+  if (process.env.GOOGLE_CALLBACK_URL) {
+    return process.env.GOOGLE_CALLBACK_URL
+  }
+  // Default to localhost for development
+  return 'http://localhost:4000/auth/google/callback'
+}
 
-export const isGoogleAuthConfigured = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET)
+const GOOGLE_CALLBACK_URL = getCallbackURL()
 
 if (!isGoogleAuthConfigured) {
   console.warn('⚠️  Google OAuth credentials are not fully configured.')
