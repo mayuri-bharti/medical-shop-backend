@@ -1,12 +1,17 @@
+// Load environment variables FIRST before any imports that depend on them
+import 'dotenv/config'
+
 import express from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
 import morgan from 'morgan'
 import mongoose from 'mongoose'
+import session from 'express-session'
+import MongoStore from 'connect-mongo'
+import passport from './config/passport.js'
 import { auth } from './src/middleware/auth.js'
 import rateLimit from 'express-rate-limit'
 import compression from 'compression'
-import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { existsSync } from 'fs'
@@ -33,7 +38,10 @@ import addressRoutes from './routes/addresses.js'
 import returnRoutes from './routes/returns.js'
 import contactRoutes from './routes/contact.js'
 import adminContactRoutes from './src/routes/admin/contact.js'
-dotenv.config()
+import googleAuthRoutes from './routes/googleAuth.js'
+
+const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
+const sessionSecret = process.env.SESSION_SECRET || 'super-secure-session-secret'
 
 // Global error handlers to prevent Vercel crashes
 process.on('unhandledRejection', (reason, promise) => {
@@ -42,6 +50,10 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Initialize Express app
 const app = express()
+
+if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
 
 // Security middleware - configured to allow Google OAuth
 app.use(helmet({
@@ -165,6 +177,29 @@ const adminAuthLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+app.use(
+  session({
+    name: process.env.SESSION_COOKIE_NAME || 'medical.sid',
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl,
+      collectionName: 'sessions',
+      ttl: 14 * 24 * 60 * 60
+    }),
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    }
+  })
+)
+
+app.use(passport.initialize())
+app.use(passport.session())
+
 // Serve static files from uploads directory
 // Always enable for local files, use Cloudinary in production/Vercel only
 const __filename = fileURLToPath(import.meta.url)
@@ -252,8 +287,6 @@ app.get('/api/health', (req, res) => {
 })
 
 // Initialize MongoDB connection BEFORE routes
-const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
-
 // Initialize database connection
 const initializeDB = async () => {
   if (!mongoUrl) {
@@ -296,6 +329,9 @@ if (!process.env.VERCEL) {
     console.error('Failed to initialize database:', err)
   })
 }
+
+// Google OAuth routes (Passport)
+app.use(googleAuthRoutes)
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes)

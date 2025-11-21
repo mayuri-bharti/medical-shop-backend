@@ -18,11 +18,13 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.41.0",
+    "connect-mongo": "^5.1.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "express-session": "^1.17.3",
     "express-rate-limit": "^7.1.5",
     "express-validator": "^7.0.1",
     "google-auth-library": "^9.15.1",
@@ -32,6 +34,8 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.7",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "redis": "^4.6.10",
     "twilio": "^4.19.0"
   },
