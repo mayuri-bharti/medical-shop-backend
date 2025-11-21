@@ -8,16 +8,17 @@ export const isGoogleAuthConfigured = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRE
 
 const getCallbackURL = () => {
   try {
-    // For Vercel, use VERCEL_URL or custom callback URL
-    if (process.env.VERCEL_URL) {
-      // Vercel provides VERCEL_URL (e.g., "medical-shop-backend.vercel.app")
-      return `https://${process.env.VERCEL_URL}/auth/google/callback`
+    // For Vercel serverless, use /api/auth/google/callback path
+    if (process.env.VERCEL || process.env.VERCEL_URL) {
+      const baseUrl = process.env.VERCEL_URL || 'medical-shop-backend.vercel.app'
+      // Serverless functions are under /api path
+      return `https://${baseUrl}/api/auth/google/callback`
     }
     // For custom deployments
     if (process.env.GOOGLE_CALLBACK_URL) {
       return process.env.GOOGLE_CALLBACK_URL
     }
-    // Default to localhost for development
+    // Default to localhost for development (non-serverless)
     return 'http://localhost:4000/auth/google/callback'
   } catch (error) {
     console.error('Error generating callback URL:', error.message)
