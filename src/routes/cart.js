@@ -42,14 +42,39 @@ router.get('/', auth, async (req, res) => {
  */
 router.post('/items', auth, [
   body('itemType').optional().isIn(['product', 'medicine']).withMessage('Invalid item type'),
-  body('productId').optional().isMongoId().withMessage('Invalid product ID'),
-  body('medicineId').optional().isMongoId().withMessage('Invalid medicine ID'),
+  body('productId').optional().custom((value) => {
+    // Validate productId format if provided
+    if (value !== undefined && value !== null) {
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error('Product ID cannot be empty')
+      }
+      if (!value.match(/^[0-9a-fA-F]{24}$/)) {
+        throw new Error('Invalid product ID format. This product cannot be added to cart. Please select a valid product from our catalog.')
+      }
+    }
+    return true
+  }),
+  body('medicineId').optional().custom((value) => {
+    // Validate medicineId format if provided
+    if (value !== undefined && value !== null) {
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error('Medicine ID cannot be empty')
+      }
+      if (!value.match(/^[0-9a-fA-F]{24}$/)) {
+        throw new Error('Invalid medicine ID format. This medicine cannot be added to cart. Please select a valid medicine from our catalog.')
+      }
+    }
+    return true
+  }),
   body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
   body().custom((value) => {
-    const hasProduct = !!value.productId
-    const hasMedicine = !!value.medicineId
+    const hasProduct = value.productId !== undefined && value.productId !== null && String(value.productId).trim() !== ''
+    const hasMedicine = value.medicineId !== undefined && value.medicineId !== null && String(value.medicineId).trim() !== ''
     if (!hasProduct && !hasMedicine) {
-      throw new Error('Provide productId or medicineId')
+      throw new Error('Please provide a product ID or medicine ID')
+    }
+    if (hasProduct && hasMedicine) {
+      throw new Error('Please provide either productId or medicineId, not both')
     }
     return true
   })
@@ -57,9 +82,10 @@ router.post('/items', auth, [
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
+      const errorMessages = errors.array().map(err => err.msg).join(', ')
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
+        message: errorMessages || 'Validation failed. Please check your input.',
         errors: errors.array()
       })
     }

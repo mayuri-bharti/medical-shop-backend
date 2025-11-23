@@ -95,6 +95,23 @@ export default async function handler(req, res) {
     await runMiddleware(req, res, passport.initialize())
     await runMiddleware(req, res, passport.session())
 
+    // Log the callback URL being used (for debugging)
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || 
+      (process.env.VERCEL || process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL || process.env.VERCEL_DOMAIN || 'medical-shop-backend.vercel.app'}/api/auth/google/callback`
+        : (process.env.NODE_ENV === 'production' 
+          ? 'https://medical-shop-backend.vercel.app/api/auth/google/callback'
+          : 'http://localhost:4000/auth/google/callback'))
+    
+    console.log('🔍 Google OAuth Debug Info:')
+    console.log('   Client ID:', process.env.GOOGLE_CLIENT_ID ? '✅ Set' : '❌ Missing')
+    console.log('   Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? '✅ Set' : '❌ Missing')
+    console.log('   Callback URL:', callbackUrl)
+    console.log('   Request URL:', req.url)
+    console.log('   Request Host:', req.headers.host)
+    console.log('   Environment:', process.env.NODE_ENV || 'development')
+    console.log('   VERCEL:', process.env.VERCEL || 'not set')
+
     // Authenticate with Google (this will redirect to Google)
     passport.authenticate('google', {
       scope: ['profile', 'email'],

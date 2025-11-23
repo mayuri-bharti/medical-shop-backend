@@ -80,6 +80,12 @@ passport.deserializeUser(async (id, done) => {
 
 if (isGoogleAuthConfigured) {
   try {
+    // Log the exact configuration being used
+    console.log('🔧 Google Strategy Configuration:')
+    console.log('   Client ID:', GOOGLE_CLIENT_ID ? `${GOOGLE_CLIENT_ID.substring(0, 20)}...` : 'MISSING')
+    console.log('   Client Secret:', GOOGLE_CLIENT_SECRET ? '✅ Set' : '❌ Missing')
+    console.log('   Callback URL:', GOOGLE_CALLBACK_URL)
+    
     passport.use(
       new GoogleStrategy(
         {

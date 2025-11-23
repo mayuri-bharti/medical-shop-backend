@@ -136,13 +136,15 @@ app.use((req, res, next) => {
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 200, // limit each IP to 200 requests per windowMs (increased from 100)
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for admin auth routes (they have their own limiter)
+  skip: (req) => req.path.startsWith('/api/admin/auth')
 })
 
 app.use('/api/', limiter)
@@ -150,7 +152,7 @@ app.use('/api/', limiter)
 // Stricter rate limit for auth endpoints (public/user logins)
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 5 user login attempts
+  max: 200, // limit each IP to 5 user login attempts
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.'
@@ -162,8 +164,8 @@ const authLimiter = rateLimit({
 
 // More relaxed rate limit for admin auth (admins often need multiple attempts while testing)
 const adminAuthLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // allow more attempts for admin portals
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // allow more attempts for admin portals (increased from 20)
   message: {
     success: false,
     message: 'Too many admin login attempts from this IP. Please wait a moment and try again.'
