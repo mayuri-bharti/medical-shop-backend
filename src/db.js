@@ -3,6 +3,60 @@ import mongoose from 'mongoose'
 let cachedMongoUrl = null
 let reconnectTimeout = null
 let isConnecting = false
+const DEFAULT_LOCAL_MONGO_URL = process.env.MONGO_FALLBACK_URL ||
+  process.env.LOCAL_MONGO_URL ||
+  'mongodb://127.0.0.1:27017/medical-shop'
+const NETWORK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN'])
+let connectionEventsBound = false
+
+const maskMongoUrl = (url = '') => url.replace(/:[^:@/]+@/, ':****@')
+
+const buildMongoUrlPriorityList = (primaryUrl) => {
+  const urls = []
+
+  if (cachedMongoUrl) {
+    urls.push(cachedMongoUrl)
+  }
+
+  if (primaryUrl && primaryUrl !== cachedMongoUrl) {
+    urls.push(primaryUrl)
+  }
+
+  if (DEFAULT_LOCAL_MONGO_URL) {
+    urls.push(DEFAULT_LOCAL_MONGO_URL)
+  }
+
+  return [...new Set(urls.filter(Boolean))]
+}
+
+const isNetworkFailure = (error = {}) => {
+  if (NETWORK_ERROR_CODES.has(error.code)) {
+    return true
+  }
+
+  const message = (error.message || '').toLowerCase()
+  return [
+    'querysrv',
+    'timed out',
+    'timeout',
+    'failed to connect',
+    'getaddrinfo',
+    'econnrefused',
+    'dns'
+  ].some(token => message.includes(token))
+}
+
+const shouldUseFallback = (error, nextUrl) => {
+  if (!nextUrl || nextUrl !== DEFAULT_LOCAL_MONGO_URL) {
+    return false
+  }
+
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    return false
+  }
+
+  return isNetworkFailure(error)
+}
 
 /**
  * Connect to MongoDB
@@ -40,37 +94,72 @@ export async function connectDB (mongoUrl) {
       heartbeatFrequencyMS: 10000, // Check connection health every 10s
     }
 
-    console.log('🔄 Attempting to connect to MongoDB...')
-    isConnecting = true
-    const conn = await mongoose.connect(cachedMongoUrl, options)
-    isConnecting = false
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout)
-      reconnectTimeout = null
+    const connectionOrder = buildMongoUrlPriorityList(mongoUrl)
+    if (!connectionOrder.length) {
+      throw new Error('MongoDB connection string not provided')
     }
+
+    let lastError = null
+
+    for (let idx = 0; idx < connectionOrder.length; idx++) {
+      const candidateUrl = connectionOrder[idx]
+      const nextUrl = connectionOrder[idx + 1]
+
+      try {
+        console.log('🔄 Attempting to connect to MongoDB...')
+        console.log(`📍 Connection URL: ${maskMongoUrl(candidateUrl)}`)
+        isConnecting = true
+        const conn = await mongoose.connect(candidateUrl, options)
+        isConnecting = false
+        cachedMongoUrl = candidateUrl
+        lastError = null
+
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout)
+          reconnectTimeout = null
+        }
+        
+        console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
+        console.log(`📊 Database: ${conn.connection.name}`)
+        
+        if (!connectionEventsBound) {
+          mongoose.connection.on('error', (err) => {
+            console.error('❌ MongoDB connection error:', err)
+            scheduleReconnect()
+          })
+      
+          mongoose.connection.on('disconnected', () => {
+            console.log('⚠️  MongoDB disconnected')
+            scheduleReconnect()
+          })
+
+          // Graceful shutdown
+          process.on('SIGINT', async () => {
+            await mongoose.connection.close()
+            console.log('MongoDB connection closed through app termination')
+            process.exit(0)
+          })
+
+          connectionEventsBound = true
+        }
     
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
-    console.log(`📊 Database: ${conn.connection.name}`)
-    
-    // Handle connection events
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ MongoDB connection error:', err)
-      scheduleReconnect()
-    })
+        return conn
+      } catch (attemptError) {
+        isConnecting = false
+        lastError = attemptError
 
-    mongoose.connection.on('disconnected', () => {
-      console.log('⚠️  MongoDB disconnected')
-      scheduleReconnect()
-    })
+        if (shouldUseFallback(attemptError, nextUrl)) {
+          console.warn(`⚠️  MongoDB primary unavailable (${attemptError.code || attemptError.message}). Falling back to ${maskMongoUrl(nextUrl)}`)
+          continue
+        }
 
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close()
-      console.log('MongoDB connection closed through app termination')
-      process.exit(0)
-    })
+        throw attemptError
+      }
+    }
 
-    return conn
+    if (lastError) {
+      throw lastError
+    }
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message)
     isConnecting = false
