@@ -1,12 +1,24 @@
 import mongoose from 'mongoose'
 
+let cachedMongoUrl = null
+let reconnectTimeout = null
+let isConnecting = false
+
 /**
  * Connect to MongoDB
  * @param {string} mongoUrl - MongoDB connection URL
  * @returns {Promise<mongoose.Connection>}
  */
-export const connectDB = async (mongoUrl) => {
+export async function connectDB (mongoUrl) {
   try {
+    if (mongoUrl) {
+      cachedMongoUrl = mongoUrl
+    }
+
+    if (isConnecting) {
+      return mongoose.connection.asPromise()
+    }
+
     // If already connected, return immediately
     if (mongoose.connection.readyState === 1) {
       console.log('✅ MongoDB Already Connected')
@@ -29,7 +41,13 @@ export const connectDB = async (mongoUrl) => {
     }
 
     console.log('🔄 Attempting to connect to MongoDB...')
-    const conn = await mongoose.connect(mongoUrl, options)
+    isConnecting = true
+    const conn = await mongoose.connect(cachedMongoUrl, options)
+    isConnecting = false
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout)
+      reconnectTimeout = null
+    }
     
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
     console.log(`📊 Database: ${conn.connection.name}`)
@@ -37,10 +55,12 @@ export const connectDB = async (mongoUrl) => {
     // Handle connection events
     mongoose.connection.on('error', (err) => {
       console.error('❌ MongoDB connection error:', err)
+      scheduleReconnect()
     })
 
     mongoose.connection.on('disconnected', () => {
       console.log('⚠️  MongoDB disconnected')
+      scheduleReconnect()
     })
 
     // Graceful shutdown
@@ -53,6 +73,8 @@ export const connectDB = async (mongoUrl) => {
     return conn
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message)
+    isConnecting = false
+    scheduleReconnect()
     
     // Provide helpful error messages
     if (error.message.includes('authentication')) {
@@ -72,6 +94,28 @@ export const connectDB = async (mongoUrl) => {
     }
     throw error
   }
+}
+
+const scheduleReconnect = () => {
+  if (process.env.VERCEL) {
+    // Vercel serverless cold starts handle fresh connections per request
+    return
+  }
+
+  if (!cachedMongoUrl || reconnectTimeout) {
+    return
+  }
+
+  reconnectTimeout = setTimeout(async () => {
+    reconnectTimeout = null
+    try {
+      console.log('🔁 Attempting automatic MongoDB reconnection...')
+      await connectDB(cachedMongoUrl)
+    } catch (error) {
+      console.error('❌ MongoDB reconnection attempt failed:', error.message)
+      scheduleReconnect()
+    }
+  }, 5000)
 }
 
 /**
