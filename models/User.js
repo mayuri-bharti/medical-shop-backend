@@ -53,7 +53,10 @@ const addressSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   phone: {
     type: String,
-    required: true,
+    required: function() {
+      // Phone is required only if user is not logging in with Google
+      return !this.googleId
+    },
     // Removed unique constraint to allow same phone with different emails
     // Phone can be same for different users as long as emails are different
     sparse: true,
@@ -76,6 +79,12 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     select: false
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
   },
   role: {
     type: String,

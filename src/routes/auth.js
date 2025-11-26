@@ -811,4 +811,241 @@ router.post('/change-password', auth, [
   }
 })
 
+/**
+ * POST /auth/google
+ * Login or register with Google OAuth
+ * 
+ * Body: { idToken: string }
+ * 
+ * Status codes: 200 (success), 400 (validation), 500 (error)
+ */
+router.post('/google', [
+  body('idToken')
+    .notEmpty()
+    .withMessage('Google ID token is required')
+], async (req, res) => {
+  try {
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
+    // Validate input
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { idToken } = req.body
+
+    console.log('📥 Google login request received:', {
+      hasToken: !!idToken,
+      tokenLength: idToken?.length || 0,
+      tokenPreview: idToken ? `${idToken.substring(0, 20)}...` : 'none'
+    })
+
+    // Check if Google Client ID is configured
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      console.error('❌ GOOGLE_CLIENT_ID not configured in environment variables')
+      return res.status(500).json({
+        success: false,
+        message: 'Google OAuth not configured. Please contact administrator.'
+      })
+    }
+
+    if (!idToken) {
+      console.error('❌ No idToken provided in request body')
+      return res.status(400).json({
+        success: false,
+        message: 'Google token is required'
+      })
+    }
+
+    // Verify Google ID token
+    const { OAuth2Client } = await import('google-auth-library')
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
+
+    console.log('🔍 Verifying Google token with Client ID:', 
+      process.env.GOOGLE_CLIENT_ID ? `${process.env.GOOGLE_CLIENT_ID.substring(0, 30)}...` : 'NOT SET'
+    )
+
+    // Decode token to check expiration before verification
+    try {
+      const tokenParts = idToken.split('.')
+      if (tokenParts.length === 3) {
+        const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
+        const now = Math.floor(Date.now() / 1000)
+        const tokenAge = now - (payload.iat || 0)
+        const expiresIn = (payload.exp || 0) - now
+        
+        console.log('🔍 Token analysis before verification:', {
+          issuedAt: new Date((payload.iat || 0) * 1000).toISOString(),
+          expiresAt: new Date((payload.exp || 0) * 1000).toISOString(),
+          serverTime: new Date().toISOString(),
+          tokenAge: `${tokenAge} seconds (${Math.round(tokenAge / 60)} minutes)`,
+          expiresIn: `${expiresIn} seconds`,
+          email: payload.email
+        })
+        
+        // If token is already expired by more than 1 hour, reject immediately
+        if (expiresIn < -3600) {
+          console.error('❌ Token expired more than 1 hour ago - likely system clock issue or cached token')
+          return res.status(400).json({
+            success: false,
+            message: 'Token expired. Please click "Sign in with Google" again to get a fresh token.',
+            shouldRetry: true,
+            hint: 'This token appears to be very old. Please ensure your system clock is correct and try again.'
+          })
+        }
+      }
+    } catch (decodeError) {
+      console.warn('Could not decode token for analysis:', decodeError.message)
+    }
+
+    let ticket
+    try {
+      // Verify token with increased clock skew tolerance (30 minutes)
+      // This helps with time differences between systems
+      ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+        clockToleranceSecs: 1800 // Allow 30 minutes clock skew
+      })
+      
+      const payload = ticket.getPayload()
+      const now = Math.floor(Date.now() / 1000)
+      const tokenAge = now - (payload.iat || 0)
+      const expiresIn = (payload.exp || 0) - now
+      
+      console.log('✅ Google token verified successfully', {
+        tokenAge: `${tokenAge} seconds (${Math.round(tokenAge / 60)} minutes)`,
+        expiresIn: `${expiresIn} seconds`,
+        email: payload.email,
+        serverTime: new Date().toISOString()
+      })
+    } catch (googleError) {
+      console.error('❌ Google token verification error:', {
+        message: googleError.message,
+        name: googleError.name,
+        code: googleError.code,
+        clientId: process.env.GOOGLE_CLIENT_ID ? `${process.env.GOOGLE_CLIENT_ID.substring(0, 30)}...` : 'NOT SET',
+        tokenLength: idToken?.length || 0
+      })
+      
+      // Provide more helpful error messages
+      let errorMessage = 'Invalid Google token. Please try again.'
+      let shouldRetry = false
+      
+      if (googleError.message?.includes('Token used too early')) {
+        errorMessage = 'Token timing issue. Please try again.'
+        shouldRetry = true
+      } else if (googleError.message?.includes('Token used too late') || googleError.message?.includes('expired')) {
+        errorMessage = 'Token expired. Please sign in with Google again to get a fresh token.'
+        shouldRetry = true
+      } else if (googleError.message?.includes('audience') || googleError.message?.includes('Invalid token signature')) {
+        errorMessage = 'Token audience mismatch. The Google Client ID in backend does not match the one used in frontend.'
+      } else if (googleError.message?.includes('Invalid token')) {
+        errorMessage = 'Invalid token format. Please check Google OAuth configuration.'
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message: errorMessage,
+        shouldRetry,
+        ...(process.env.NODE_ENV === 'development' && { 
+          details: googleError.message,
+          hint: shouldRetry 
+            ? 'The token has expired. Please click the Google Sign-In button again to get a fresh token.'
+            : 'Check that GOOGLE_CLIENT_ID in backend .env matches VITE_GOOGLE_CLIENT_ID in frontend .env'
+        })
+      })
+    }
+
+    // Extract payload (already extracted above for logging, but need it here too)
+    const payload = ticket.getPayload()
+    const { sub: googleId, email, name, picture } = payload
+
+    if (!googleId || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google account information incomplete'
+      })
+    }
+
+    // Find or create user
+    let user = await User.findOne({ 
+      $or: [
+        { googleId },
+        { email: email.toLowerCase() }
+      ]
+    })
+
+    if (user) {
+      // Update existing user with Google info if not already set
+      if (!user.googleId) {
+        user.googleId = googleId
+      }
+      if (!user.name && name) {
+        user.name = name
+      }
+      if (!user.avatar && picture) {
+        user.avatar = picture
+      }
+      if (!user.email) {
+        user.email = email.toLowerCase()
+      }
+      user.isVerified = true
+      await user.save()
+    } else {
+      // Create new user
+      user = new User({
+        googleId,
+        email: email.toLowerCase(),
+        name: name || email.split('@')[0],
+        avatar: picture,
+        isVerified: true,
+        role: 'USER'
+      })
+      await user.save()
+      console.log(`✅ New user created via Google: ${email}`)
+    }
+
+    // Generate tokens
+    const tokens = createTokens(user)
+
+    console.log(`✅ Google login successful for ${email}`)
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          avatar: user.avatar,
+          role: user.role,
+          isVerified: user.isVerified
+        },
+        ...tokens
+      }
+    })
+  } catch (error) {
+    console.error('Google login error:', error.message)
+    
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Google login failed'
+    })
+  }
+})
+
 export default router
