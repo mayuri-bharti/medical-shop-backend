@@ -33,3 +33,5 @@ console.log('\n📝 Frontend Configuration:')
 console.log('   Make sure VITE_GOOGLE_CLIENT_ID in frontend .env matches the above value')
 console.log('   Then restart both frontend and backend servers\n')
 
+
+
