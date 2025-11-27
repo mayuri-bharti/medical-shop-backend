@@ -1,14 +1,28 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
-import mongoose from 'mongoose'
 import Admin from '../../models/Admin.js'
 import Otp from '../../models/Otp.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { sendOtpSms } from '../services/otpProvider.js'
 import { verifyAdminToken } from '../middleware/adminAuth.js'
+import { ensureDatabaseConnection } from '../utils/ensureDatabaseConnection.js'
 
 const router = express.Router()
+
+const ensureDbOrRespond = async (res) => {
+  try {
+    await ensureDatabaseConnection()
+    return true
+  } catch (error) {
+    console.error('Admin auth database readiness error:', error.message)
+    res.status(503).json({
+      success: false,
+      message: 'Database connection not ready. Please try again in a moment.'
+    })
+    return false
+  }
+}
 
 // Test route to verify adminAuth routes are working
 router.get('/test', (req, res) => {
@@ -65,13 +79,7 @@ router.post('/send-otp', [
     .trim()
 ], async (req, res) => {
   try {
-    // Check MongoDB connection
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection not ready. Please try again in a moment.'
-      })
-    }
+    if (!await ensureDbOrRespond(res)) return
 
     // Validate input
     const errors = validationResult(req)
@@ -150,13 +158,7 @@ router.post('/verify-otp', [
     .withMessage('OTP must be a 6-digit number')
 ], async (req, res) => {
   try {
-    // Check MongoDB connection
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection not ready. Please try again in a moment.'
-      })
-    }
+    if (!await ensureDbOrRespond(res)) return
 
     // Validate input
     const errors = validationResult(req)
@@ -286,13 +288,7 @@ router.post('/login-password', [
     .withMessage('Password must be at least 6 characters')
 ], async (req, res) => {
   try {
-    // Check MongoDB connection
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection not ready. Please try again in a moment.'
-      })
-    }
+    if (!await ensureDbOrRespond(res)) return
 
     // Validate input
     const errors = validationResult(req)
