@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import Admin from '../../models/Admin.js'
+import { ensureDatabaseConnection } from '../utils/ensureDatabaseConnection.js'
 // REMOVED: import User from '../../models/User.js' - Users cannot access admin routes
 
 /**
@@ -10,6 +11,16 @@ import Admin from '../../models/Admin.js'
  */
 export const verifyAdminToken = async (req, res, next) => {
   try {
+    try {
+      await ensureDatabaseConnection()
+    } catch (dbError) {
+      console.error('Admin token verification DB error:', dbError.message)
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again in a moment.'
+      })
+    }
+
     // Get token from Authorization header
     const authHeader = req.header('Authorization')
     
