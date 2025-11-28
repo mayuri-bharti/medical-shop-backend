@@ -125,6 +125,14 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Prescription'
   },
+  deliveryBoy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DeliveryBoy',
+    index: true
+  },
+  assignedAt: {
+    type: Date
+  },
   paymentMethod: {
     type: String,
     enum: ['COD', 'ONLINE', 'WALLET'],

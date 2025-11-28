@@ -35,6 +35,9 @@ import addressRoutes from './routes/addresses.js'
 import returnRoutes from './routes/returns.js'
 import contactRoutes from './routes/contact.js'
 import adminContactRoutes from './src/routes/admin/contact.js'
+import adminDeliveryBoyRoutes from './src/routes/admin/delivery-boys.js'
+import deliveryBoyAuthRoutes from './src/routes/delivery-boy/auth.js'
+import deliveryBoyOrderRoutes from './src/routes/delivery-boy/orders.js'
 
 const mongoUrl = process.env.MONGO_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/medical-shop'
 // Global error handlers to prevent Vercel crashes
@@ -350,6 +353,9 @@ app.use('/api/admin/dashboard', adminDashboardRoutes)
 app.use('/api/admin/doctors', adminDoctorRoutes)
 app.use('/api/admin/appointments', adminAppointmentRoutes)
 app.use('/api/admin/contact', adminContactRoutes)
+app.use('/api/admin/delivery-boys', adminDeliveryBoyRoutes)
+app.use('/api/delivery-boy/auth', deliveryBoyAuthRoutes)
+app.use('/api/delivery-boy/orders', deliveryBoyOrderRoutes)
 
 // Default route
 app.get('/', (req, res) => {

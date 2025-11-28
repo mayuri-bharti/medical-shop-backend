@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator'
 import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import Order from '../../../models/Order.js'
 import Prescription from '../../../models/Prescription.js'
+import DeliveryBoy from '../../../models/DeliveryBoy.js'
 
 const router = express.Router()
 
@@ -56,6 +57,7 @@ router.get('/', verifyAdminToken, async (req, res) => {
       .populate('user', 'name phone email')
       .populate('items.product', 'name brand images')
       .populate('prescription', 'status order timeline user')
+      .populate('deliveryBoy', 'name phone vehicleNumber vehicleType')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -127,6 +129,7 @@ router.patch('/:id/status', verifyAdminToken, [
       .populate('user', 'name phone email')
       .populate('items.product', 'name brand images')
       .populate('prescription', 'status order timeline')
+      .populate('deliveryBoy', 'name phone vehicleNumber vehicleType')
 
     res.json({
       success: true,
@@ -138,6 +141,89 @@ router.patch('/:id/status', verifyAdminToken, [
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update order status'
+    })
+  }
+})
+
+/**
+ * PATCH /admin/orders/:id/assign-delivery-boy
+ * Assign delivery boy to order (admin only)
+ */
+router.patch('/:id/assign-delivery-boy', verifyAdminToken, [
+  body('deliveryBoyId').isMongoId().withMessage('Valid delivery boy ID required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { deliveryBoyId } = req.body
+    const order = await Order.findById(req.params.id)
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      })
+    }
+
+    // Check if delivery boy exists and is active
+    const deliveryBoy = await DeliveryBoy.findById(deliveryBoyId)
+    if (!deliveryBoy) {
+      return res.status(404).json({
+        success: false,
+        message: 'Delivery boy not found'
+      })
+    }
+
+    if (!deliveryBoy.isActive || deliveryBoy.isBlocked) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot assign order to inactive or blocked delivery boy'
+      })
+    }
+
+    // Assign delivery boy
+    order.deliveryBoy = deliveryBoyId
+    order.assignedAt = new Date()
+
+    // If order is in processing, change to "out for delivery"
+    if (order.status === 'processing') {
+      await order.updateStatus('out for delivery', {
+        changedBy: req.admin._id,
+        note: `Assigned to delivery boy: ${deliveryBoy.name}`
+      })
+    } else {
+      await order.save()
+    }
+
+    // Add to delivery boy's assigned orders
+    if (!deliveryBoy.assignedOrders.includes(order._id)) {
+      deliveryBoy.assignedOrders.push(order._id)
+      await deliveryBoy.save()
+    }
+
+    const updatedOrder = await Order.findById(order._id)
+      .populate('user', 'name phone email')
+      .populate('items.product', 'name brand images')
+      .populate('prescription', 'status order timeline')
+      .populate('deliveryBoy', 'name phone vehicleNumber vehicleType')
+
+    res.json({
+      success: true,
+      message: 'Delivery boy assigned successfully',
+      order: updatedOrder
+    })
+  } catch (error) {
+    console.error('Assign delivery boy error:', error)
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to assign delivery boy'
     })
   }
 })
