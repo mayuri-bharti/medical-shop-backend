@@ -3,6 +3,8 @@ import { body, validationResult } from 'express-validator'
 import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import User from '../../../models/User.js'
 import Admin from '../../../models/Admin.js'
+import Order from '../../../models/Order.js'
+import Prescription from '../../../models/Prescription.js'
 
 const router = express.Router()
 
@@ -57,6 +59,84 @@ router.get('/', verifyAdminToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch users'
+    })
+  }
+})
+
+/**
+ * POST /admin/users/create
+ * Create a new user account (admin only)
+ * Status codes: 201 (created), 400 (validation error), 403 (not admin), 409 (already exists), 500 (error)
+ */
+router.post('/create', verifyAdminToken, [
+  body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
+  body('email').optional().isEmail().normalizeEmail(),
+  body('phone').trim().isLength({ min: 10 }).withMessage('Phone is required'),
+  body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      })
+    }
+
+    const { name, email, phone, password } = req.body
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { phone },
+        ...(email ? [{ email }] : [])
+      ]
+    })
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'User with this phone or email already exists'
+      })
+    }
+
+    // Generate random password if not provided
+    const userPassword = password || Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '123'
+
+    // Create user
+    const user = new User({
+      name,
+      email: email || undefined,
+      phone,
+      password: userPassword,
+      isVerified: true
+    })
+
+    await user.save()
+
+    // Notify user about account creation
+    try {
+      const { notifyAccountCreated } = await import('../../services/notificationService.js')
+      await notifyAccountCreated(user, userPassword)
+    } catch (notifError) {
+      console.error('⚠️ Failed to send account creation notification:', notifError.message)
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'User account created successfully',
+      data: {
+        user: user.getPublicProfile(),
+        password: userPassword // Return password only for admin
+      }
+    })
+  } catch (error) {
+    console.error('Create user error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create user account',
+      error: error.message
     })
   }
 })
@@ -311,6 +391,66 @@ router.delete('/:id', verifyAdminToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete user',
+      error: error.message
+    })
+  }
+})
+
+/**
+ * GET /admin/users/:id/orders-prescriptions
+ * Get user's orders and prescriptions (admin only)
+ * Status codes: 200 (success), 403 (not admin), 404 (not found), 500 (error)
+ */
+router.get('/:id/orders-prescriptions', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Find user
+    const user = await User.findById(id)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    // Fetch orders and prescriptions in parallel
+    const [orders, prescriptions] = await Promise.all([
+      Order.find({ user: id })
+        .populate('items.product', 'name brand images price mrp')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      Prescription.find({ user: id, isActive: true })
+        .populate('order', 'orderNumber status total')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean()
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone
+        },
+        orders,
+        prescriptions,
+        stats: {
+          totalOrders: orders.length,
+          totalPrescriptions: prescriptions.length,
+          totalOrderValue: orders.reduce((sum, order) => sum + (order.total || 0), 0)
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Get user orders/prescriptions error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user orders and prescriptions',
       error: error.message
     })
   }

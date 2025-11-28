@@ -241,7 +241,7 @@ const fileAuth = async (req, res, next) => {
 
 /**
  * GET /prescriptions/:id/file
- * Serve prescription file with authentication
+ * Serve prescription file with authentication (inline viewing)
  */
 router.get('/:id/file', fileAuth, async (req, res) => {
   try {
@@ -286,7 +286,7 @@ router.get('/:id/file', fileAuth, async (req, res) => {
       })
     }
 
-    // Set appropriate headers
+    // Set appropriate headers for inline viewing
     res.setHeader('Content-Type', prescription.fileType || 'application/octet-stream')
     res.setHeader('Content-Disposition', `inline; filename="${prescription.originalName}"`)
     
@@ -298,6 +298,125 @@ router.get('/:id/file', fileAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to serve prescription file'
+    })
+  }
+})
+
+/**
+ * GET /prescriptions/:id/download
+ * Download prescription file with authentication (attachment)
+ */
+router.get('/:id/download', fileAuth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findById(req.params.id)
+    
+    if (!prescription) {
+      return res.status(404).json({
+        success: false,
+        message: 'Prescription not found'
+      })
+    }
+
+    // Check if user owns the prescription or is admin
+    const isOwner = prescription.user.toString() === req.user._id.toString()
+    const isAdmin = req.user.role === 'ADMIN' || req.user.role === 'admin' || req.user.isAdmin
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      })
+    }
+
+    // If it's a Cloudinary URL, fetch and stream it with download headers
+    if (prescription.fileUrl && prescription.fileUrl.startsWith('http')) {
+      try {
+        // Fetch the file from Cloudinary
+        const response = await fetch(prescription.fileUrl)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch file from Cloudinary')
+        }
+        
+        // Set download headers
+        res.setHeader('Content-Type', prescription.fileType || response.headers.get('content-type') || 'application/octet-stream')
+        res.setHeader('Content-Disposition', `attachment; filename="${prescription.originalName}"`)
+        
+        // Stream the file to the client
+        const buffer = await response.arrayBuffer()
+        res.send(Buffer.from(buffer))
+        return
+      } catch (fetchError) {
+        console.error('Error fetching from Cloudinary:', fetchError)
+        // Fallback: redirect to Cloudinary URL with download parameter
+        const separator = prescription.fileUrl.includes('?') ? '&' : '?'
+        const downloadUrl = `${prescription.fileUrl}${separator}fl_attachment`
+        return res.redirect(downloadUrl)
+      }
+    }
+
+    // Serve local file
+    const filePath = path.join(
+      process.cwd(),
+      'uploads',
+      'prescriptions',
+      prescription.fileName
+    )
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found'
+      })
+    }
+
+    // Set appropriate headers for download
+    res.setHeader('Content-Type', prescription.fileType || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${prescription.originalName}"`)
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath)
+    fileStream.pipe(res)
+  } catch (error) {
+    console.error('Download prescription file error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download prescription file'
+    })
+  }
+})
+
+/**
+ * DELETE /prescriptions/:id
+ * Delete (soft delete) prescription
+ */
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findOne({ 
+      _id: req.params.id, 
+      user: req.user._id 
+    })
+
+    if (!prescription) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Prescription not found' 
+      })
+    }
+
+    prescription.isActive = false
+    await prescription.save()
+
+    res.json({ 
+      success: true,
+      message: 'Prescription deleted successfully' 
+    })
+  } catch (error) {
+    console.error('Delete prescription error:', error)
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to delete prescription' 
     })
   }
 })

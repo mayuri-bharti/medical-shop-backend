@@ -52,6 +52,16 @@ const contactMessageSchema = new mongoose.Schema({
     trim: true,
     maxlength: 2000
   },
+  adminReply: {
+    type: String,
+    trim: true,
+    maxlength: 2000
+  },
+  repliedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
+  },
+  repliedAt: Date,
   respondedAt: Date,
   metadata: {
     ip: String,

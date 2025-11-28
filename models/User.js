@@ -54,8 +54,8 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: function() {
-      // Phone is required only if user is not logging in with Google
-      return !this.googleId
+      // Phone is required only if user is not logging in with Google or Facebook
+      return !this.googleId && !this.facebookId
     },
     // Removed unique constraint to allow same phone with different emails
     // Phone can be same for different users as long as emails are different
@@ -76,11 +76,29 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  dateOfBirth: {
+    type: Date
+  },
+  gender: {
+    type: String,
+    enum: ['male', 'female', 'other', 'prefer_not_to_say'],
+    trim: true
+  },
+  alternatePhone: {
+    type: String,
+    trim: true
+  },
   password: {
     type: String,
     select: false
   },
   googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
+  facebookId: {
     type: String,
     unique: true,
     sparse: true,
@@ -106,6 +124,31 @@ const userSchema = new mongoose.Schema({
   },
   defaultAddressId: {
     type: mongoose.Schema.Types.ObjectId
+  },
+  notifications: {
+    email: {
+      type: Boolean,
+      default: true
+    },
+    sms: {
+      type: Boolean,
+      default: true
+    },
+    push: {
+      type: Boolean,
+      default: true
+    }
+  },
+  preferences: {
+    language: {
+      type: String,
+      default: 'en',
+      enum: ['en', 'hi', 'mr']
+    },
+    currency: {
+      type: String,
+      default: 'INR'
+    }
   }
 }, {
   timestamps: true,
@@ -161,11 +204,17 @@ userSchema.methods.getPublicProfile = function() {
     name: user.name,
     email: user.email,
     phone: user.phone,
+    alternatePhone: user.alternatePhone,
+    avatar: user.avatar,
+    dateOfBirth: user.dateOfBirth,
+    gender: user.gender,
     role: user.role,
     isVerified: user.isVerified,
     isBlocked: user.isBlocked,
     addresses: user.addresses || [],
     defaultAddressId: user.defaultAddressId || null,
+    notifications: user.notifications || { email: true, sms: true, push: true },
+    preferences: user.preferences || { language: 'en', currency: 'INR' },
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   }

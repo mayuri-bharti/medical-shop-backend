@@ -1,6 +1,7 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
 import ContactMessage from '../models/ContactMessage.js'
+import { auth } from '../middleware/auth.js'
 import jwt from 'jsonwebtoken'
 
 const router = express.Router()
@@ -62,6 +63,39 @@ router.post('/', [
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to submit contact request'
+    })
+  }
+})
+
+// Get user's contact messages (with replies) - requires auth
+router.get('/my-messages', auth, async (req, res) => {
+  try {
+    const userId = req.user._id
+    const user = req.user
+
+    const query = { $or: [] }
+    if (userId) query.$or.push({ user: userId })
+    if (user?.email) query.$or.push({ email: user.email })
+    if (!query.$or.length) {
+      return res.json({
+        success: true,
+        data: []
+      })
+    }
+
+    const messages = await ContactMessage.find(query)
+      .populate('repliedBy', 'name email')
+      .sort({ createdAt: -1 })
+
+    res.json({
+      success: true,
+      data: messages
+    })
+  } catch (error) {
+    console.error('Get user contact messages error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch contact messages'
     })
   }
 })

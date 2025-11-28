@@ -287,11 +287,41 @@ const initializeDB = async () => {
   }
 }
 
+// Helper to ensure DB connection on Vercel/serverless before hitting routes
+const ensureServerlessDBConnection = async () => {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection
+  }
+
+  if (!mongoUrl) {
+    throw new Error('MongoDB connection string not configured')
+  }
+
+  return initializeDB()
+}
+
 // Start DB connection (fire and forget, but wait a bit)
-// Skip in Vercel serverless - api/index.js handles DB connection per-request
 if (!process.env.VERCEL) {
   initializeDB().catch((err) => {
     console.error('Failed to initialize database:', err)
+  })
+} else {
+  // On Vercel ensure every request waits for a live connection
+  app.use(async (req, res, next) => {
+    if (!req.path.startsWith('/api')) {
+      return next()
+    }
+
+    try {
+      await ensureServerlessDBConnection()
+      next()
+    } catch (error) {
+      console.error('❌ MongoDB connection error before handling request:', error.message)
+      res.status(503).json({
+        success: false,
+        message: 'Database connection not ready. Please try again shortly.'
+      })
+    }
   })
 }
 

@@ -176,9 +176,40 @@ router.get('/', [
 // Get single product - Cache for 5 minutes
 router.get('/:id', cache(300), async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
-      .select('-__v')
-      .lean() // Use lean for better performance
+    const { id } = req.params
+    let product = null
+
+    // Check if id is a valid MongoDB ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id)
+    
+    if (isValidObjectId) {
+      // Try to find by ObjectId first
+      product = await Product.findById(id)
+        .select('-__v')
+        .lean()
+    }
+    
+    // If not found by ObjectId or not a valid ObjectId, try to find by SKU
+    if (!product) {
+      product = await Product.findOne({ sku: id.toUpperCase() })
+        .select('-__v')
+        .lean()
+    }
+    
+    // If still not found, try to find by name (slug-like search)
+    if (!product) {
+      // Convert slug-like format to searchable name
+      const searchName = id.replace(/-/g, ' ')
+      product = await Product.findOne({
+        $or: [
+          { name: { $regex: new RegExp(searchName, 'i') } },
+          { sku: { $regex: new RegExp(id, 'i') } }
+        ],
+        isActive: true
+      })
+        .select('-__v')
+        .lean()
+    }
     
     if (!product) {
       return res.status(404).json({ message: 'Product not found' })

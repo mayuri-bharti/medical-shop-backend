@@ -82,6 +82,7 @@ router.get('/:id', verifyAdminToken, async (req, res) => {
 router.patch('/:id', verifyAdminToken, [
   body('status').optional().isIn(CONTACT_STATUSES).withMessage('Invalid status'),
   body('resolutionNotes').optional().isString().isLength({ max: 2000 }),
+  body('adminReply').optional().isString().isLength({ min: 10, max: 2000 }).withMessage('Reply must be between 10 and 2000 characters'),
   body('priority').optional().isIn(['low', 'medium', 'high'])
 ], async (req, res) => {
   try {
@@ -113,6 +114,25 @@ router.patch('/:id', verifyAdminToken, [
 
     if (req.body.resolutionNotes !== undefined) {
       contactMessage.resolutionNotes = req.body.resolutionNotes
+    }
+
+    if (req.body.adminReply !== undefined) {
+      contactMessage.adminReply = req.body.adminReply
+      contactMessage.repliedBy = req.admin?._id
+      contactMessage.repliedAt = new Date()
+      contactMessage.status = req.body.status || 'in_progress'
+      contactMessage.assignedTo = req.admin?._id
+      
+      // Notify user about the reply
+      try {
+        const { notifyContactReply } = await import('../../services/notificationService.js')
+        const adminName = req.admin?.name || 'HealthPlus Team'
+        const notifications = await notifyContactReply(contactMessage, adminName)
+        console.log('📧 Notifications sent:', notifications)
+      } catch (notifError) {
+        console.error('⚠️ Failed to send notifications:', notifError.message)
+        // Don't fail the request if notification fails
+      }
     }
 
     if (req.body.priority) {

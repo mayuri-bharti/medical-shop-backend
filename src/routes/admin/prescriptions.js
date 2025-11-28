@@ -4,6 +4,10 @@ import { verifyAdminToken } from '../../middleware/adminAuth.js'
 import Prescription from '../../../models/Prescription.js'
 import Product from '../../../models/Product.js'
 import Order from '../../../models/Order.js'
+import Admin from '../../../models/Admin.js'
+import fs from 'fs'
+import path from 'path'
+import jwt from 'jsonwebtoken'
 
 const router = express.Router()
 
@@ -396,6 +400,154 @@ router.delete('/:id', verifyAdminToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete prescription'
+    })
+  }
+})
+
+/**
+ * Custom auth middleware for admin file downloads that accepts token via query parameter
+ */
+const adminFileAuth = async (req, res, next) => {
+  try {
+    let token = null
+    
+    // Try to get token from Authorization header first
+    const authHeader = req.header('Authorization')
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7)
+    }
+    
+    // Fallback: get token from query parameter (for download links)
+    if (!token && req.query && req.query.token) {
+      token = req.query.token
+    }
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. No valid token provided.'
+      })
+    }
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    
+    // Check if token is for admin
+    if (decoded.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      })
+    }
+    
+    // Check Admin model
+    const admin = await Admin.findById(decoded.userId)
+    
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token. Admin not found.'
+      })
+    }
+    
+    if (admin.isAdmin !== undefined && !admin.isAdmin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token. Admin privileges not granted.'
+      })
+    }
+
+    // Attach admin to request object
+    req.admin = admin
+    req.adminId = admin._id
+    
+    next()
+  } catch (error) {
+    console.error('Admin file auth error:', error.message)
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token.'
+      })
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Authentication error.'
+    })
+  }
+}
+
+/**
+ * GET /admin/prescriptions/:id/download
+ * Download prescription file (admin only)
+ */
+router.get('/:id/download', adminFileAuth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findById(req.params.id)
+    
+    if (!prescription) {
+      return res.status(404).json({
+        success: false,
+        message: 'Prescription not found'
+      })
+    }
+
+    // If it's a Cloudinary URL, fetch and stream it with download headers
+    if (prescription.fileUrl && prescription.fileUrl.startsWith('http')) {
+      try {
+        // Fetch the file from Cloudinary
+        const response = await fetch(prescription.fileUrl)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch file from Cloudinary')
+        }
+        
+        // Set download headers
+        res.setHeader('Content-Type', prescription.fileType || response.headers.get('content-type') || 'application/octet-stream')
+        res.setHeader('Content-Disposition', `attachment; filename="${prescription.originalName}"`)
+        
+        // Stream the file to the client
+        const buffer = await response.arrayBuffer()
+        res.send(Buffer.from(buffer))
+        return
+      } catch (fetchError) {
+        console.error('Error fetching from Cloudinary:', fetchError)
+        // Fallback: redirect to Cloudinary URL with download parameter
+        const separator = prescription.fileUrl.includes('?') ? '&' : '?'
+        const downloadUrl = `${prescription.fileUrl}${separator}fl_attachment`
+        return res.redirect(downloadUrl)
+      }
+    }
+
+    // Serve local file
+    const filePath = path.join(
+      process.cwd(),
+      'uploads',
+      'prescriptions',
+      prescription.fileName
+    )
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found'
+      })
+    }
+
+    // Set appropriate headers for download
+    res.setHeader('Content-Type', prescription.fileType || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${prescription.originalName}"`)
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath)
+    fileStream.pipe(res)
+  } catch (error) {
+    console.error('Download prescription file error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download prescription file'
     })
   }
 })
