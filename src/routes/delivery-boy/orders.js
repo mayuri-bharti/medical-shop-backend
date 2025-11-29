@@ -189,3 +189,4 @@ router.patch('/:id/location', verifyDeliveryBoyToken, [
 
 export default router
 
+

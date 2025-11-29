@@ -43,6 +43,19 @@ router.get('/', verifyAdminToken, async (req, res) => {
       filter.source = req.query.source
     }
 
+    // Filter by delivery boy assignment status
+    if (req.query.needAssignment === 'true') {
+      // Orders that need delivery boy assignment (processing status without delivery boy)
+      filter.status = 'processing'
+      filter.deliveryBoy = null
+    } else if (req.query.deliveryBoyId) {
+      // Filter by specific delivery boy
+      filter.deliveryBoy = req.query.deliveryBoyId
+    } else if (req.query.unassigned === 'true') {
+      // All unassigned orders (regardless of status)
+      filter.deliveryBoy = null
+    }
+
     if (req.query.startDate || req.query.endDate) {
       filter.createdAt = {}
       if (req.query.startDate) {
@@ -224,6 +237,128 @@ router.patch('/:id/assign-delivery-boy', verifyAdminToken, [
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to assign delivery boy'
+    })
+  }
+})
+
+/**
+ * PATCH /admin/orders/:id/unassign-delivery-boy
+ * Unassign delivery boy from order (admin only)
+ */
+router.patch('/:id/unassign-delivery-boy', verifyAdminToken, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id)
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      })
+    }
+
+    if (!order.deliveryBoy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order does not have a delivery boy assigned'
+      })
+    }
+
+    const deliveryBoyId = order.deliveryBoy
+    const deliveryBoy = await DeliveryBoy.findById(deliveryBoyId)
+
+    // Remove from delivery boy's assigned orders
+    if (deliveryBoy) {
+      deliveryBoy.assignedOrders = deliveryBoy.assignedOrders.filter(
+        orderId => orderId.toString() !== order._id.toString()
+      )
+      await deliveryBoy.save()
+    }
+
+    // Unassign delivery boy
+    order.deliveryBoy = null
+    order.assignedAt = null
+
+    // If order is "out for delivery", change back to "processing"
+    if (order.status === 'out for delivery') {
+      await order.updateStatus('processing', {
+        changedBy: req.admin._id,
+        note: 'Delivery boy unassigned'
+      })
+    } else {
+      await order.save()
+    }
+
+    const updatedOrder = await Order.findById(order._id)
+      .populate('user', 'name phone email')
+      .populate('items.product', 'name brand images')
+      .populate('prescription', 'status order timeline')
+      .populate('deliveryBoy', 'name phone vehicleNumber vehicleType')
+
+    res.json({
+      success: true,
+      message: 'Delivery boy unassigned successfully',
+      order: updatedOrder
+    })
+  } catch (error) {
+    console.error('Unassign delivery boy error:', error)
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to unassign delivery boy'
+    })
+  }
+})
+
+/**
+ * GET /admin/orders/unassigned
+ * Get orders that need delivery boy assignment
+ */
+router.get('/unassigned', verifyAdminToken, async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1)
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200)
+    const skip = (page - 1) * limit
+
+    const filter = {
+      deliveryBoy: null,
+      status: { $in: ['processing', 'out for delivery'] }
+    }
+
+    if (req.query.startDate || req.query.endDate) {
+      filter.createdAt = {}
+      if (req.query.startDate) {
+        filter.createdAt.$gte = new Date(req.query.startDate)
+      }
+      if (req.query.endDate) {
+        filter.createdAt.$lte = new Date(req.query.endDate)
+      }
+    }
+
+    const orders = await Order.find(filter)
+      .populate('user', 'name phone email')
+      .populate('items.product', 'name brand images')
+      .populate('prescription', 'status order timeline user')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select('-__v')
+
+    const total = await Order.countDocuments(filter)
+
+    res.json({
+      success: true,
+      orders,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    })
+  } catch (error) {
+    console.error('Get unassigned orders error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch unassigned orders'
     })
   }
 })

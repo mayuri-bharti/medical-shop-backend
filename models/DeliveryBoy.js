@@ -117,3 +117,4 @@ deliveryBoySchema.methods.getPublicProfile = function() {
 
 export default mongoose.model('DeliveryBoy', deliveryBoySchema)
 
+
