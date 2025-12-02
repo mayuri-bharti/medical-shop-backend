@@ -104,13 +104,46 @@ router.get('/me', async (req, res) => {
       })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    let decoded
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    } catch (jwtError) {
+      console.error('JWT verification error in /me:', jwtError.message)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      })
+    }
+
+    if (!decoded.deliveryBoyId) {
+      console.error('Token missing deliveryBoyId in /me:', decoded)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format'
+      })
+    }
+
     const deliveryBoy = await DeliveryBoy.findById(decoded.deliveryBoyId).select('-password -__v')
 
     if (!deliveryBoy) {
+      console.error('Delivery boy not found in /me for ID:', decoded.deliveryBoyId)
       return res.status(404).json({
         success: false,
-        message: 'Delivery boy not found'
+        message: 'Delivery boy not found. Please login again.'
+      })
+    }
+
+    if (deliveryBoy.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been blocked'
+      })
+    }
+
+    if (!deliveryBoy.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is inactive'
       })
     }
 

@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
 import DeliveryBoy from '../../models/DeliveryBoy.js'
 
 /**
@@ -15,13 +16,42 @@ export const verifyDeliveryBoyToken = async (req, res, next) => {
       })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    let decoded
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    } catch (jwtError) {
+      console.error('JWT verification error:', jwtError.message)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      })
+    }
+
+    // Validate that deliveryBoyId exists in token
+    if (!decoded.deliveryBoyId) {
+      console.error('Token missing deliveryBoyId:', decoded)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format'
+      })
+    }
+
+    // Validate ObjectId format (Mongoose findById handles both string and ObjectId)
+    if (!mongoose.Types.ObjectId.isValid(decoded.deliveryBoyId)) {
+      console.error('Invalid ObjectId format:', decoded.deliveryBoyId)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format'
+      })
+    }
+
     const deliveryBoy = await DeliveryBoy.findById(decoded.deliveryBoyId)
 
     if (!deliveryBoy) {
+      console.error('Delivery boy not found for ID:', deliveryBoyId, 'Token decoded:', decoded)
       return res.status(404).json({
         success: false,
-        message: 'Delivery boy not found'
+        message: 'Delivery boy not found. Please login again.'
       })
     }
 
