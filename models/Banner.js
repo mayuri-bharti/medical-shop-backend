@@ -11,6 +11,11 @@ const bannerSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  description: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   imageUrl: {
     type: String,
     required: true
@@ -30,10 +35,23 @@ const bannerSchema = new mongoose.Schema({
     default: 0,
     index: true
   },
+  priority: {
+    type: Number,
+    default: 0,
+    index: true
+  },
   isActive: {
     type: Boolean,
     default: true,
     index: true
+  },
+  startDate: {
+    type: Date,
+    default: null
+  },
+  endDate: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true,
@@ -41,7 +59,8 @@ const bannerSchema = new mongoose.Schema({
 })
 
 // Indexes for better query performance
-bannerSchema.index({ isActive: 1, order: 1 }) // For active banners sorted by order
+bannerSchema.index({ isActive: 1, priority: -1, order: 1 }) // For active banners sorted by priority and order
+bannerSchema.index({ startDate: 1, endDate: 1 }) // For date range queries
 bannerSchema.index({ createdAt: -1 }) // For date sorting
 
 export default mongoose.model('Banner', bannerSchema)

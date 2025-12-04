@@ -5,13 +5,30 @@ const router = express.Router()
 
 /**
  * GET /api/banners
- * Get all active banners (public endpoint)
+ * Get all active banners filtered by date (public endpoint)
  */
 router.get('/', async (req, res) => {
   try {
-    const banners = await Banner.find({ isActive: true })
-      .sort({ order: 1, createdAt: -1 })
-      .select('_id title subtitle imageUrl link offerText order')
+    const now = new Date()
+    
+    // Build query for active banners within date range
+    const query = {
+      isActive: true,
+      $or: [
+        // Banner has no date restrictions
+        { startDate: null, endDate: null },
+        // Banner has only start date and it's passed
+        { startDate: { $lte: now }, endDate: null },
+        // Banner has only end date and it hasn't passed
+        { startDate: null, endDate: { $gte: now } },
+        // Banner has both dates and current date is within range
+        { startDate: { $lte: now }, endDate: { $gte: now } }
+      ]
+    }
+
+    const banners = await Banner.find(query)
+      .sort({ priority: -1, order: 1, createdAt: -1 })
+      .select('_id title subtitle description imageUrl link offerText order priority startDate endDate')
       .lean()
 
     // Ensure imageUrl is a full URL if it's a local path and map _id to id
@@ -28,10 +45,12 @@ router.get('/', async (req, res) => {
         id: banner._id.toString(),
         title: banner.title,
         subtitle: banner.subtitle || '',
+        description: banner.description || '',
         imageUrl,
         link: banner.link,
         offerText: banner.offerText || '',
-        order: banner.order
+        order: banner.order,
+        priority: banner.priority || 0
       }
     })
 

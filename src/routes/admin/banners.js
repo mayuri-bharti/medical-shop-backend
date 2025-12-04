@@ -31,7 +31,7 @@ const upload = multer({
 router.get('/', verifyAdminToken, async (req, res) => {
   try {
     const banners = await Banner.find()
-      .sort({ order: 1, createdAt: -1 })
+      .sort({ priority: -1, order: 1, createdAt: -1 })
 
     res.json({
       success: true,
@@ -53,6 +53,7 @@ router.get('/', verifyAdminToken, async (req, res) => {
 router.post('/', verifyAdminToken, upload.single('image'), [
   body('title').trim().notEmpty().withMessage('Title is required'),
   body('subtitle').optional().trim(),
+  body('description').optional().trim(),
   body('link').trim().notEmpty().withMessage('Link is required').custom((value) => {
     const isExternalUrl = value.startsWith('http://') || value.startsWith('https://')
     const isInternalRoute = value.startsWith('/')
@@ -74,7 +75,16 @@ router.post('/', verifyAdminToken, upload.single('image'), [
   }),
   body('offerText').optional().trim(),
   body('order').optional().isInt({ min: 0 }).withMessage('Order must be a non-negative integer'),
-  body('isActive').optional().isBoolean().withMessage('isActive must be a boolean')
+  body('priority').optional().isInt({ min: 0 }).withMessage('Priority must be a non-negative integer'),
+  body('isActive').optional().isBoolean().withMessage('isActive must be a boolean'),
+  body('startDate').optional().custom((value) => {
+    if (!value || value === '') return true
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) || !isNaN(Date.parse(value))
+  }).withMessage('Start date must be a valid ISO 8601 date'),
+  body('endDate').optional().custom((value) => {
+    if (!value || value === '') return true
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) || !isNaN(Date.parse(value))
+  }).withMessage('End date must be a valid ISO 8601 date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -86,7 +96,7 @@ router.post('/', verifyAdminToken, upload.single('image'), [
       })
     }
 
-    const { title, subtitle, link, offerText, order, isActive, imageUrl } = req.body
+    const { title, subtitle, description, link, offerText, order, priority, isActive, startDate, endDate, imageUrl } = req.body
 
     let finalImageUrl = imageUrl
 
@@ -130,19 +140,39 @@ router.post('/', verifyAdminToken, upload.single('image'), [
       }
     }
 
+    // Validate date range
+    if (startDate && endDate) {
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      if (start > end) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start date must be before or equal to end date'
+        })
+      }
+    }
+
     // Get max order to place new banner at end
     const maxOrder = await Banner.findOne().sort({ order: -1 }).select('order').lean()
     const newOrder = order !== undefined ? parseInt(order) : (maxOrder?.order || 0) + 1
+
+    // Get max priority
+    const maxPriority = await Banner.findOne().sort({ priority: -1 }).select('priority').lean()
+    const newPriority = priority !== undefined ? parseInt(priority) : (maxPriority?.priority || 0) + 1
 
     // Create banner document
     const banner = new Banner({
       title,
       subtitle: subtitle || '',
+      description: description || '',
       imageUrl: finalImageUrl,
       link,
       offerText: offerText || '',
       order: newOrder,
-      isActive: isActive !== undefined ? (isActive === 'true' || isActive === true) : true
+      priority: newPriority,
+      isActive: isActive !== undefined ? (isActive === 'true' || isActive === true) : true,
+      startDate: (startDate && startDate.trim() !== '') ? new Date(startDate) : null,
+      endDate: (endDate && endDate.trim() !== '') ? new Date(endDate) : null
     })
 
     await banner.save()
@@ -168,6 +198,7 @@ router.post('/', verifyAdminToken, upload.single('image'), [
 router.put('/:id', verifyAdminToken, upload.single('image'), [
   body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
   body('subtitle').optional().trim(),
+  body('description').optional().trim(),
   body('link').optional().trim().notEmpty().withMessage('Link cannot be empty').custom((value) => {
     if (!value) return true
     const isExternalUrl = value.startsWith('http://') || value.startsWith('https://')
@@ -190,7 +221,10 @@ router.put('/:id', verifyAdminToken, upload.single('image'), [
   }),
   body('offerText').optional().trim(),
   body('order').optional().isInt({ min: 0 }).withMessage('Order must be a non-negative integer'),
-  body('isActive').optional().isBoolean().withMessage('isActive must be a boolean')
+  body('priority').optional().isInt({ min: 0 }).withMessage('Priority must be a non-negative integer'),
+  body('isActive').optional().isBoolean().withMessage('isActive must be a boolean'),
+  body('startDate').optional().isISO8601().withMessage('Start date must be a valid ISO 8601 date'),
+  body('endDate').optional().isISO8601().withMessage('End date must be a valid ISO 8601 date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -212,15 +246,51 @@ router.put('/:id', verifyAdminToken, upload.single('image'), [
       })
     }
 
-    const { title, subtitle, link, offerText, order, isActive, imageUrl } = req.body
+    const { title, subtitle, description, link, offerText, order, priority, isActive, startDate, endDate, imageUrl } = req.body
     const updateData = {}
 
     if (title !== undefined) updateData.title = title.trim()
     if (subtitle !== undefined) updateData.subtitle = subtitle.trim()
+    if (description !== undefined) updateData.description = description.trim()
     if (link !== undefined) updateData.link = link.trim()
     if (offerText !== undefined) updateData.offerText = offerText.trim()
     if (order !== undefined) updateData.order = parseInt(order)
+    if (priority !== undefined) updateData.priority = parseInt(priority)
     if (isActive !== undefined) updateData.isActive = isActive === 'true' || isActive === true
+    
+    // Handle date fields - handle empty strings from FormData
+    if (startDate !== undefined) {
+      updateData.startDate = (startDate && startDate.trim() !== '') ? new Date(startDate) : null
+    }
+    if (endDate !== undefined) {
+      updateData.endDate = (endDate && endDate.trim() !== '') ? new Date(endDate) : null
+    }
+    
+    // Validate date range if both are being updated
+    if (updateData.startDate !== undefined && updateData.endDate !== undefined) {
+      const start = updateData.startDate || banner.startDate
+      const end = updateData.endDate || banner.endDate
+      if (start && end && start > end) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start date must be before or equal to end date'
+        })
+      }
+    } else if (updateData.startDate !== undefined && banner.endDate) {
+      if (updateData.startDate > banner.endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start date must be before or equal to end date'
+        })
+      }
+    } else if (updateData.endDate !== undefined && banner.startDate) {
+      if (banner.startDate > updateData.endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start date must be before or equal to end date'
+        })
+      }
+    }
 
     // Handle image update: file upload takes priority, then URL
     if (req.file) {
